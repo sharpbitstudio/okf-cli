@@ -1,16 +1,23 @@
 name: release
 
-# Runs when a GitHub release (or pre-release) is published for a tag `v<semver>`: builds and tests that tag
-# with the version taken from the tag, then creates a build provenance attestation for the `all` jar and
-# attaches the jar and its `.sha256` to the release. Nothing is published to a package registry.
+# Started by hand on main (Actions -> release -> Run workflow) with the version to release, without the leading
+# `v`: builds and tests that commit with this version, creates a build provenance attestation for the `all` jar,
+# verifies it, and creates a draft release `v<version>` targeting the built commit, with the jar, its `.sha256`
+# and the attestation's Sigstore bundle. A maintainer reviews the draft and publishes it, which creates the tag.
+# The workflow never publishes a release, creates a tag or deletes a release. Nothing is published to a package
+# registry.
 
 on:
-  release:
-    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version to release, without the leading v (for example 1.2.3 or 1.2.3-rc.1)
+        required: true
+        type: string
 
-# Two runs for the same tag never overlap.
+# Release runs never overlap (one group for all versions).
 concurrency:
-  group: release-${{ github.ref }}
+  group: release
   cancel-in-progress: false
 
 # Least privilege by default; only release-assets, which never runs Gradle, gets write permissions.
@@ -24,30 +31,53 @@ jobs:
     timeout-minutes: 20
     outputs:
       version: ${{ steps.version.outputs.version }}
+      sha256: ${{ steps.checksum.outputs.sha256 }}
 
     steps:
-      - name: Resolve the version from the tag
+      - name: Check the version
         id: version
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
         run: |
           set -euo pipefail
-          # SemVer 2.0 core + optional pre-release (no leading zeros, no empty identifiers); build metadata
-          # (`+…`) is not accepted, since the version becomes part of the jar file name.
-          SEMVER='^v((0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(\.(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?)$'
-          if ! [[ "$GITHUB_REF_NAME" =~ $SEMVER ]]; then
-            echo "::error::Invalid release tag: '$GITHUB_REF_NAME'. Expected v<semver> like v1.2.3 or v1.2.3-rc.1 (no build metadata)"
+          if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "::error::Releases are built from main only"
             exit 1
           fi
-          VERSION="${BASH_REMATCH[1]}"
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "Release version: $VERSION"
+          # SemVer 2.0 core + optional pre-release (no leading zeros, no empty identifiers); build metadata
+          # (`+…`) is not accepted, since the version becomes part of the jar file name. The input is not echoed
+          # on a mismatch.
+          SEMVER='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(\.(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?$'
+          if ! [[ "$INPUT_VERSION" =~ $SEMVER ]]; then
+            echo "::error::Invalid version. Expected <semver> without the leading v, like 1.2.3 or 1.2.3-rc.1 (no build metadata)"
+            exit 1
+          fi
+          # The tag must not exist yet: an anonymous read of the public repo. Assigned first, so a failed lookup
+          # stops the step.
+          EXISTING="$(git ls-remote --tags "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" "refs/tags/v$INPUT_VERSION")"
+          if [ -n "$EXISTING" ]; then
+            echo "::error::The tag v$INPUT_VERSION already exists"
+            exit 1
+          fi
+          echo "version=$INPUT_VERSION" >> "$GITHUB_OUTPUT"
+          echo "Release version: $INPUT_VERSION"
 
       - uses: actions/checkout@v7
         with:
-          # The commit of the release event, which the attestation names as its source (a re-run keeps it,
-          # even if the tag was moved since).
+          # The commit the run was started on (main at dispatch), which the attestation names as its source and
+          # the draft release targets (a re-run keeps it, even if main has moved since).
           ref: ${{ github.sha }}
           # The build never talks to the remote again.
           persist-credentials: false
+
+      # Typo guard: with immutable releases, a mistyped but valid version would use up a tag name for good.
+      - name: The changelog names this version
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          grep -Eq "^## ${VERSION//./[.]} — [0-9]{4}-[0-9]{2}-[0-9]{2}\$" CHANGELOG.md \
+            || { echo "::error::CHANGELOG.md has no section '## $VERSION — <date>'"; exit 1; }
 
       - name: Set up JDK 25 (Temurin)
         uses: actions/setup-java@v6
@@ -81,7 +111,7 @@ jobs:
           fi
           echo "$OUT"
 
-      # This repo's own docs/ OKF bundle, checked by the code this tag builds.
+      # This repo's own docs/ OKF bundle, checked by the code this run builds.
       - name: OKF docs bundle check
         env:
           VERSION: ${{ steps.version.outputs.version }}
@@ -116,8 +146,10 @@ jobs:
           git -c user.name=ci -c user.email=ci@localhost -c commit.gpgsign=false commit -q -m fixture
           java -jar "$JAR" check --repo="$FIXTURE" --strict --refs-strict --code-paths-required
 
-      # `sha256sum` format (`<hex>  <file name>`), so `sha256sum -c` verifies the downloaded jar.
+      # `sha256sum` format (`<hex>  <file name>`), so `sha256sum -c` verifies the downloaded jar. The hex digest is
+      # also a job output, which release-assets compares with the jar it downloads.
       - name: Checksum the all jar
+        id: checksum
         env:
           VERSION: ${{ steps.version.outputs.version }}
         working-directory: build/libs
@@ -125,10 +157,12 @@ jobs:
           set -euo pipefail
           JAR="okf-cli-$VERSION-all.jar"
           sha256sum "$JAR" > "$JAR.sha256"
+          SHA256="$(cut -d ' ' -f 1 "$JAR.sha256")"
+          echo "sha256=$SHA256" >> "$GITHUB_OUTPUT"
           {
             echo "### okf-cli $VERSION"
             echo
-            echo "SHA-256 of \`$JAR\`: \`$(cut -d ' ' -f 1 "$JAR.sha256")\`"
+            echo "SHA-256 of \`$JAR\`: \`$SHA256\`"
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload the all jar and its checksum
@@ -152,17 +186,19 @@ jobs:
           retention-days: 7
           if-no-files-found: ignore
 
-  # Attests and attaches the jar the build job produced. A separate job, so the write permissions never see
-  # the Gradle build; it can be re-run on its own (--clobber replaces assets already attached).
+  # Attests the jar the build job produced and drafts the release. A separate job, so the write permissions never
+  # see the Gradle build. It never publishes a release, creates the tag or deletes a release: before attesting, it
+  # stops if the tag, a release or a draft for it already exists, and a maintainer deletes an unwanted draft in the
+  # UI before running again.
   release-assets:
-    name: Attest and attach the all jar
+    name: Attest the all jar and draft the release
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
-      contents: write
-      id-token: write
-      attestations: write
+      contents: write      # create the draft release and upload its assets
+      id-token: write      # Sigstore signing certificate for the attestation
+      attestations: write  # store the attestation
 
     steps:
       - name: Download the all jar and its checksum
@@ -170,22 +206,119 @@ jobs:
         with:
           name: okf-cli-all-jar
 
+      # Also against the build job's output, so the attested bytes are the bytes the build job built and tested.
       - name: Verify the checksum
         env:
           VERSION: ${{ needs.build.outputs.version }}
-        run: sha256sum -c "okf-cli-$VERSION-all.jar.sha256"
+          SHA256: ${{ needs.build.outputs.sha256 }}
+        run: |
+          set -euo pipefail
+          JAR="okf-cli-$VERSION-all.jar"
+          sha256sum -c "$JAR.sha256"
+          ACTUAL="$(sha256sum "$JAR" | cut -d ' ' -f 1)"
+          if [ "$ACTUAL" != "$SHA256" ]; then
+            echo "::error::SHA-256 of $JAR is $ACTUAL; the build job reported '$SHA256'"
+            exit 1
+          fi
 
-      - name: Attest build provenance
-        uses: actions/attest@v4
-        with:
-          subject-path: okf-cli-${{ needs.build.outputs.version }}-all.jar
-
-      - name: Upload to the release
+      # Checked before attesting, so a run that stops here leaves no attestation behind.
+      - name: No tag, release or draft for this version yet
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           VERSION: ${{ needs.build.outputs.version }}
         run: |
           set -euo pipefail
+          TAG="v$VERSION"
+          EXISTING_TAG="$(git ls-remote --tags "$GITHUB_SERVER_URL/$GH_REPO" "refs/tags/$TAG")"
+          if [ -n "$EXISTING_TAG" ]; then
+            echo "::error::The tag $TAG already exists; a published release is never changed, so release a new version"
+            exit 1
+          fi
+          EXISTING="$(gh api --paginate "repos/$GH_REPO/releases?per_page=100" --jq "[.[] | select(.tag_name == \"$TAG\")] | length" | awk '{s+=$1} END {print s+0}')"
+          if [ "$EXISTING" != 0 ]; then
+            echo "::error::A release or draft for $TAG already exists; if it is a draft, delete it in the UI and run again"
+            exit 1
+          fi
+
+      - name: Attest build provenance
+        id: attest
+        uses: actions/attest@v4
+        with:
+          subject-path: okf-cli-${{ needs.build.outputs.version }}-all.jar
+
+      # The Sigstore bundle becomes the third release asset, so anyone can verify the jar without a GitHub account.
+      - name: Keep the attestation bundle
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+          BUNDLE: ${{ steps.attest.outputs.bundle-path }}
+        run: |
+          set -euo pipefail
+          # One subject, so one JSON Lines entry, which is also a plain JSON bundle.
+          [ "$(grep -c '' "$BUNDLE")" = 1 ] || { echo "::error::Expected exactly one attestation bundle in $BUNDLE"; exit 1; }
+          cp "$BUNDLE" "okf-cli-$VERSION-all.jar.sigstore.json"
+
+      # Without the attestations API, against exactly the bundle that will be published: SLSA build provenance
+      # from this workflow, on main, at the built commit.
+      - name: Verify the attestation
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          set -euo pipefail
+          gh attestation verify "okf-cli-$VERSION-all.jar" --repo "$GH_REPO" \
+            --bundle "okf-cli-$VERSION-all.jar.sigstore.json" \
+            --predicate-type https://slsa.dev/provenance/v1 \
+            --signer-workflow "$GH_REPO/.github/workflows/release.yml" \
+            --source-ref refs/heads/main --source-digest "$GITHUB_SHA"
+
+      - name: Draft the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          VERSION: ${{ needs.build.outputs.version }}
+          SHA256: ${{ needs.build.outputs.sha256 }}
+        run: |
+          set -euo pipefail
+          TAG="v$VERSION"
           JAR="okf-cli-$VERSION-all.jar"
-          gh release upload "$GITHUB_REF_NAME" "$JAR" "$JAR.sha256" --clobber
+          PRERELEASE=()
+          case "$VERSION" in *-*) PRERELEASE=(--prerelease) ;; esac
+          # The release notes, from single-quoted printf formats (no heredoc: backticks stay literal).
+          LINK="$GITHUB_SERVER_URL/$GH_REPO/blob/$TAG"
+          {
+            printf '[CHANGELOG.md](%s/CHANGELOG.md) lists what is in this version.\n' "$LINK"
+            if [ "${#PRERELEASE[@]}" -gt 0 ]; then
+              printf '\nThis is a pre-release. Pre-releases are exempt from the compatibility contract ([docs/reference.md](%s/docs/reference.md#compatibility)).\n' "$LINK"
+            fi
+            printf '\n`%s` is the self-contained CLI: it runs with `java -jar` on Java 17 or later and needs `git` on the `PATH`.\n' "$JAR"
+            printf '\nVerify a download:\n\n```bash\n'
+            printf 'sha256sum -c %s.sha256\n' "$JAR"
+            printf '# build provenance, without a GitHub account (the bundle is the third asset):\n'
+            printf 'gh attestation verify %s --repo %s \\\n' "$JAR" "$GH_REPO"
+            printf '  --bundle %s.sigstore.json \\\n' "$JAR"
+            printf '  --signer-workflow %s/.github/workflows/release.yml --source-ref refs/heads/main\n' "$GH_REPO"
+            printf '# with a GitHub login: the same check online, and the release attestation that ties the jar to the tag\n'
+            printf 'gh attestation verify %s --repo %s \\\n' "$JAR" "$GH_REPO"
+            printf '  --signer-workflow %s/.github/workflows/release.yml --source-ref refs/heads/main\n' "$GH_REPO"
+            printf 'gh release verify-asset %s %s --repo %s\n' "$TAG" "$JAR" "$GH_REPO"
+            printf '```\n\nSHA-256: `%s`. Built from commit `%s`.\n' "$SHA256" "$GITHUB_SHA"
+          } > notes.md
+          URL="$(gh release create "$TAG" "$JAR" "$JAR.sha256" "$JAR.sigstore.json" --draft --target "$GITHUB_SHA" \
+            --title "okf-cli $VERSION" --notes-file notes.md "${PRERELEASE[@]}")"
+          echo "Draft release: $URL"
+          # The summary comes first, so the URL and the digest survive a failure of the check below.
+          {
+            echo
+            echo "Draft release: $URL"
+            echo
+            echo "SHA-256 of \`$JAR\`: \`$SHA256\`"
+            echo
+            echo "Review the draft and publish it; publishing creates the tag \`$TAG\` at \`$GITHUB_SHA\`."
+          } >> "$GITHUB_STEP_SUMMARY"
+          DRAFTS="$(gh api --paginate "repos/$GH_REPO/releases?per_page=100" --jq "[.[] | select(.draft and .tag_name == \"$TAG\")] | length" | awk '{s+=$1} END {print s+0}')"
+          if [ "$DRAFTS" != 1 ]; then
+            echo "::error::Expected exactly one draft for $TAG, found $DRAFTS"
+            exit 1
+          fi

@@ -204,7 +204,8 @@ java -jar okf-cli-<version>-all.jar index --repo=.
 java -jar okf-cli-<version>-all.jar check --repo=. --strict --refs-strict --code-paths-required
 ```
 
-There is no release yet: build the jar from source ([build-release.md](build-release.md)).
+Download the jar from the [releases page](https://github.com/sharpbitstudio/okf-cli/releases) and verify it
+([build-release.md](build-release.md#release)), or build it from source.
 
 A Gradle repo can wrap the jar in `JavaExec` tasks. A sketch over a local copy of the jar, with one
 `-Pokf.*` property per option:
