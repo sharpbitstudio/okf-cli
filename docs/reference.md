@@ -3,7 +3,7 @@ type: Guide
 title: "okf CLI reference"
 description: "The okf CLI (commands, options, exit codes), the okf.yaml schema, the bundle rules the tool enforces in multi-repo setups, the hub's cross-repo check (xcheck), how to run the tool, and the compatibility contract."
 tags: [okf, cli, okf-yaml, satellite-note, xcheck, compatibility, reference]
-code_paths: ["src/main/kotlin/okf/**"]
+code_paths: ["src/main/kotlin/com/sharpbitstudio/okf/**"]
 ---
 # okf CLI reference
 
@@ -217,7 +217,7 @@ fun okfTask(name: String, command: String, vararg flags: Pair<String, String>) =
     tasks.register<JavaExec>(name) {
         group = "documentation"
         classpath = okfJar
-        mainClass.set("okf.cli.Main")
+        mainClass.set("com.sharpbitstudio.okf.cli.Main")
         args(command, "--repo=${layout.projectDirectory.asFile}")
         val properties = flags.map { (property, option) -> option to providers.gradleProperty(property) }
         argumentProviders.add(

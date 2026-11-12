@@ -5,8 +5,8 @@ plugins {
     `maven-publish`
 }
 
-/** CLI entry point (`@file:JvmName("Main")` in okf/cli/Main.kt). */
-val cliMainClass = "okf.cli.Main"
+/** CLI entry point (`@file:JvmName("Main")` in com/sharpbitstudio/okf/cli/Main.kt). */
+val cliMainClass = "com.sharpbitstudio.okf.cli.Main"
 
 description = "OKF (Open Knowledge Format) v0.2 docs-bundle CLI: index, check, impact, xcheck."
 
@@ -50,7 +50,7 @@ tasks.test {
 tasks.processResources {
     val projectVersion = project.version.toString()
     inputs.property("version", projectVersion)
-    filesMatching("okf/version.properties") {
+    filesMatching("com/sharpbitstudio/okf/version.properties") {
         expand("version" to projectVersion)
     }
 }
