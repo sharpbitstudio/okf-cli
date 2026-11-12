@@ -26,7 +26,11 @@ permissions:
 
 jobs:
   build:
-    name: Build + test
+    # `Build + test` is meant to be a status check required on `main` (a ruleset in the repository settings, not in
+    # this tree): renaming this job means updating the ruleset in the same step. A PR from a branch of this repo is
+    # covered by that branch's push run, so its pull_request job is skipped (see `if`) and gets another name, so it
+    # can never stand in for the required one. The `name` condition must stay the exact negation of `if`.
+    name: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && 'Skipped on same-repo PR (see push run) - Build + test' || 'Build + test' }}
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -102,7 +106,11 @@ jobs:
     # failures on branches, warn-only on a push to main (a squash merge drops the trailers) and on
     # dependabot/** (Dependabot cannot add a trailer). Fix locally with
     # `./gradlew okfIndex okfCheck okfImpact -Pokf.strict=true -Pokf.refs.strict=true -Pokf.codePaths.required=true -Pokf.impact.strict=true`.
-    name: OKF docs bundle check (+ docs impact)
+    # `OKF docs bundle check (+ docs impact)` is meant to be a status check required on `main` (a ruleset in the
+    # repository settings, not in this tree): renaming this job means updating the ruleset in the same step. The
+    # skipped pull_request job of a PR from a branch of this repo gets another name, as in `build`; the `name`
+    # condition must stay the exact negation of `if`.
+    name: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && 'Skipped on same-repo PR (see push run) - OKF docs bundle check (+ docs impact)' || 'OKF docs bundle check (+ docs impact)' }}
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 15
