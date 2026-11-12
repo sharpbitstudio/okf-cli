@@ -8,3 +8,5 @@
   https://github.com/sharpbitstudio/okf-cli/blob/main/docs/reference.md.
 - Licensed under Apache-2.0 (`LICENSE`, `NOTICE`); the self-contained `-all` jar also carries the licences of
   the third-party components it bundles.
+- CI: the skipped jobs of a pull request from a branch of this repo no longer share their names with the checks
+  meant to be required on `main`, `Build + test` and `OKF docs bundle check (+ docs impact)`.

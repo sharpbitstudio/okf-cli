@@ -58,6 +58,12 @@ It has two jobs:
   - on a fork pull request, the pull request's base branch; on a push or manual run on any other branch,
     `origin/main`; impact findings are failures.
 
+The job names `Build + test` and `OKF docs bundle check (+ docs impact)` are the status checks meant to be required
+on `main`; renaming a job means updating the ruleset in the same step. On a pull request from a branch of this repo
+the `pull_request` run's jobs are skipped and never carry these names, so a skipped job can never satisfy a required
+check; these checks come from the branch's push run (or a manual run on the branch). On a fork pull request they come
+from the `pull_request` run.
+
 A newer push to the same branch cancels a still-running build of it, except on `main`.
 
 ## Release
