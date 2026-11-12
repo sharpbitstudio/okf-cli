@@ -46,8 +46,9 @@ major version (see [Compatibility](docs/reference.md#compatibility)).
 
 ## Status
 
-Pre-1.0: there is no release yet, so build from source. Running the tool needs Java 17 or later and `git` on the
-`PATH`; building needs JDK 17 or later (CI builds on JDK 25) and runs through the Gradle wrapper.
+Pre-1.0. Releases are on the [releases page](https://github.com/sharpbitstudio/okf-cli/releases); the first is the
+pre-release `1.0.0-alpha.1`. Running the tool needs Java 17 or later and `git` on the `PATH`; building it from
+source needs JDK 17 or later (CI builds on JDK 25) and runs through the Gradle wrapper.
 
 Before 1.0.0 some defaults still change. Today `index_language` defaults to `sr`, so the fixed text of the
 generated indexes is Serbian; before 1.0.0 the defaults switch to English. Set `index_language` and
@@ -55,17 +56,23 @@ generated indexes is Serbian; before 1.0.0 the defaults switch to English. Set `
 
 ## Quick start
 
-Build the self-contained jar:
+Download the self-contained jar and its checksum; the jar runs only after the checksum passes:
 
 ```bash
-git clone https://github.com/sharpbitstudio/okf-cli.git
-cd okf-cli
-./gradlew build
-java -jar build/libs/okf-cli-1.0.0-SNAPSHOT-all.jar version     # okf-cli 1.0.0-SNAPSHOT
+VERSION=1.0.0-alpha.1
+BASE="https://github.com/sharpbitstudio/okf-cli/releases/download/v$VERSION"
+curl -fsSLO "$BASE/okf-cli-$VERSION-all.jar" &&
+  curl -fsSLO "$BASE/okf-cli-$VERSION-all.jar.sha256" &&
+  sha256sum -c "okf-cli-$VERSION-all.jar.sha256" &&
+  java -jar "okf-cli-$VERSION-all.jar" version     # okf-cli 1.0.0-alpha.1
 ```
 
-In the repository whose docs you want to check (here the jar was copied to `tools/okf-cli.jar`), add an
-`okf.yaml` at the root:
+[`docs/build-release.md`](docs/build-release.md#release) also shows how to verify its build provenance. To build
+the jar from source instead, follow the "Build" section of [`docs/build-release.md`](docs/build-release.md#build),
+which produces `build/libs/okf-cli-<version>-all.jar`.
+
+Copy the jar into the repository whose docs you want to check (here as `tools/okf-cli.jar`) and add an `okf.yaml`
+at the root:
 
 ```yaml
 schema_version: 1

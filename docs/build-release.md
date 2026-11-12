@@ -15,8 +15,8 @@ java -jar build/libs/okf-cli-<version>-all.jar version
 ```
 
 The version comes from `gradle.properties` (`1.0.0-SNAPSHOT` between releases); the release workflow passes
-`-Pversion=<tag without the v>`. `okf version` prints it from `com/sharpbitstudio/okf/version.properties`, which
-is expanded at build time.
+`-Pversion=<version>` with the version it was started with. `okf version` prints it from
+`com/sharpbitstudio/okf/version.properties`, which is expanded at build time.
 
 `build` produces three jars under `build/libs/`:
 
@@ -68,31 +68,71 @@ A newer push to the same branch cancels a still-running build of it, except on `
 
 ## Release
 
-A release is a GitHub release with a `vX.Y.Z` tag (a pre-release such as `vX.Y.Z-alpha.1` works the same way; the
-tag must be SemVer 2.0 without build metadata, i.e. no `+…` suffix).
-Publishing it starts `.github/workflows/release.yml`; nothing is published to a Maven repository. The workflow
-has read-only permissions, except for its second job.
+A release is a GitHub release with a `vX.Y.Z` tag; a pre-release such as `vX.Y.Z-alpha.1` works the same way. The
+version is SemVer 2.0 without build metadata (no `+…` suffix). Nothing is published to a Maven repository.
 
-1. **`build`** takes the version from the tag without the leading `v` and checks it against SemVer 2.0 (no build
-   metadata), checks out the commit the release was published for and, on JDK 25, runs
-   `./gradlew build -Pversion=<version>`. It then checks that `version` prints exactly `okf-cli <version>`, checks this repo's own docs bundle with the strict flags, and smoke-tests the `all` jar on
-   Java 17 against a fixture repo, as in CI. It writes the SHA-256 of the jar to
+Releases are immutable: the repository setting "Enable release immutability" is on (like the `main` ruleset, it
+is not part of this tree). Once a release is published, its tag and assets cannot change, so the workflow only
+prepares a draft, and a maintainer publishes it:
+
+1. `CHANGELOG.md` on `main` has `## <version> — <date>`, and the README quick start names that version (both
+   land in the same pull request, before the run).
+2. The maintainer starts `.github/workflows/release.yml` by hand on `main` (Actions, "release", "Run workflow")
+   with the version, without the `v`.
+3. The maintainer reviews the draft (its three assets, the jar's SHA-256 against the run summary, the target
+   commit) and publishes it. Publishing creates the tag `v<version>` at the built commit.
+
+The workflow has read-only permissions, except for its second job:
+
+1. **`build`** checks that the run is on `main`, that the version is SemVer 2.0 without build metadata and that
+   the tag `v<version>` does not exist yet. It checks out the commit the run was started on and checks that
+   `CHANGELOG.md` has a section `## <version> — <date>`: a typo guard, since a mistyped version would use up a
+   tag name for good. On JDK 25 it runs `./gradlew build -Pversion=<version>`. It then checks that `version`
+   prints exactly `okf-cli <version>`, checks this repo's own docs bundle with the strict flags, and smoke-tests
+   the `all` jar on Java 17 against a fixture repo, as in CI. It writes the SHA-256 of the jar to
    `okf-cli-<version>-all.jar.sha256` (`sha256sum` format: `<hex>  <file name>`), adds the version and the hash to
-   the run summary, and uploads the jar and the checksum as a workflow artifact.
+   the run summary, passes the hash on as a job output, and uploads the jar and the checksum as a workflow
+   artifact.
 2. **`release-assets`** runs after `build`. It is the only job with `contents: write`, `id-token: write` and
-   `attestations: write`, and it never runs Gradle (it has no checkout). It downloads the artifact, verifies it
-   with `sha256sum -c`, creates a build-provenance attestation for the jar, and attaches
-   `okf-cli-<version>-all.jar` and `okf-cli-<version>-all.jar.sha256` to the release
-   (`gh release upload --clobber`).
+   `attestations: write`, and it never runs Gradle (it has no checkout). It downloads the artifact and verifies it
+   with `sha256sum -c` and against the hash from `build`. It stops if the tag `v<version>`, or a release or draft
+   for it, already exists; it checks this before attesting, so a run that stops there leaves no attestation
+   behind. It then creates a build-provenance attestation for the jar with `actions/attest` (SLSA provenance),
+   checks that the attestation's Sigstore bundle holds exactly one entry, and verifies the attestation against
+   that bundle (predicate type, signer workflow, source ref and commit). Finally it creates the draft release
+   `v<version>` targeting the built commit, with three assets: `okf-cli-<version>-all.jar`,
+   `okf-cli-<version>-all.jar.sha256` and the bundle as `okf-cli-<version>-all.jar.sigstore.json`. The draft is
+   marked as a pre-release when the version has a pre-release part. The job checks afterwards that exactly one
+   draft for the tag exists, and it never deletes a release.
+
+The workflow never publishes a release or creates its tag. A failed run can leave a partial draft, visible only
+to maintainers (a maintainer deletes it in the UI before running again), and public provenance records (the
+attestation and its Sigstore log entry). A published release is never changed; a fix is a new version. Keep the
+workflow files on `main` unchanged while a release run is in flight: creating a release for a target commit
+whose workflow files differ from the default branch's can need the `Workflows: write` permission, which the
+workflow token cannot have. If that happens, start a new run from the current `main`. If publishing is refused
+because the tag name was used by a deleted release, delete the draft and release a new version.
 
 Consumers verify a downloaded jar with:
 
 ```bash
 sha256sum -c okf-cli-<version>-all.jar.sha256
-gh attestation verify okf-cli-<version>-all.jar --repo sharpbitstudio/okf-cli
+# build provenance, without a GitHub account (the bundle is the third asset):
+gh attestation verify okf-cli-<version>-all.jar --repo sharpbitstudio/okf-cli \
+  --bundle okf-cli-<version>-all.jar.sigstore.json \
+  --signer-workflow sharpbitstudio/okf-cli/.github/workflows/release.yml --source-ref refs/heads/main
+# with a GitHub login: the same check online, and the release attestation that ties the jar to the tag
+gh attestation verify okf-cli-<version>-all.jar --repo sharpbitstudio/okf-cli \
+  --signer-workflow sharpbitstudio/okf-cli/.github/workflows/release.yml --source-ref refs/heads/main
+gh release verify-asset v<version> okf-cli-<version>-all.jar --repo sharpbitstudio/okf-cli
 ```
 
-Until the first release, there are no assets: build the jar from source ([Build](#build)).
+The checksum detects a damaged download. `gh attestation verify --bundle` checks against the bundle asset,
+without a GitHub account, that this repo's release workflow built the jar on `main`; without `--signer-workflow`
+and `--source-ref`, an attestation from any workflow of the repository would pass. With a login, the same check
+runs online, and `gh release verify-asset` checks the release attestation GitHub adds on publication, which ties the
+jar to the tag. The build-provenance attestation names `refs/heads/main` and the built commit as its source,
+because the tag does not exist when the jar is built.
 
 ## Own docs bundle
 
