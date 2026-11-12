@@ -1,0 +1,19 @@
+version: 2
+
+# open-pull-requests-limit: 0 holds version-update PRs for now.
+updates:
+  # Gradle dependencies (Kotlin, SnakeYAML, JUnit) and the Gradle wrapper.
+  - package-ecosystem: gradle
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 0
+
+  # GitHub Actions used in .github/workflows/*.yml.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 0
