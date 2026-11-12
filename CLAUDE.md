@@ -17,18 +17,18 @@ java -jar build/libs/okf-cli-<version>-all.jar version
 
 ## Docs (OKF, self-checked)
 
-- `docs/` is checked by the code this build compiles: the `okf*` tasks run `okf.cli.Main` from
-  `sourceSets.main`, not a released jar.
-- `docs/reference.md` carries `code_paths: src/main/kotlin/okf/**`, so every behaviour change fails
-  `okfImpact` on a branch until the reference is updated in the same branch. Alternatively, add a
+- `docs/` is checked by the code this build compiles: the `okf*` tasks run `com.sharpbitstudio.okf.cli.Main`
+  from `sourceSets.main`, not a released jar.
+- `docs/reference.md` carries `code_paths: src/main/kotlin/com/sharpbitstudio/okf/**`, so every behaviour change
+  fails `okfImpact` on a branch until the reference is updated in the same branch. Alternatively, add a
   `Docs-Impact: reference — <reason>` trailer, which fits pure refactors.
 - `docs/build-release.md` covers `build.gradle.kts`, the workflows, `LICENSE`, `NOTICE` and
   `third-party-licenses/`.
 
 ## Conventions
 
-- Kotlin, package `okf` for now (CLI in `okf.cli`, entry point `okf.cli.Main`); bytecode 17 (consumers may run
-  the jar on Java 17), built on JDK 25.
+- Kotlin, package `com.sharpbitstudio.okf` (CLI in `com.sharpbitstudio.okf.cli`, entry point
+  `com.sharpbitstudio.okf.cli.Main`); bytecode 17 (consumers may run the jar on Java 17), built on JDK 25.
 - English in code, comments, docs and commit messages.
 - Console lines and `::warning` / `::error` annotations are a contract (CI logs, PR annotations), like the
   findings, exit codes and generated indexes.

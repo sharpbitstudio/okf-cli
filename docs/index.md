@@ -3,7 +3,7 @@ okf_version: "0.2"
 ---
 # okf-cli — docs
 
-This directory is an [Open Knowledge Format (OKF) v0.2](https://github.com/GoogleCloudPlatform/open-knowledge-format/blob/main/SPEC.md) bundle: the documentation of okf-cli. It is checked by the code this repo builds: `./gradlew okfIndex okfCheck okfImpact` runs `okf.cli.Main` from this build's own output, not a released jar. Settings live in the root [`okf.yaml`](../okf.yaml); the landing page is the root [`README.md`](../README.md).
+This directory is an [Open Knowledge Format (OKF) v0.2](https://github.com/GoogleCloudPlatform/open-knowledge-format/blob/main/SPEC.md) bundle: the documentation of okf-cli. It is checked by the code this repo builds: `./gradlew okfIndex okfCheck okfImpact` runs `com.sharpbitstudio.okf.cli.Main` from this build's own output, not a released jar. Settings live in the root [`okf.yaml`](../okf.yaml); the landing page is the root [`README.md`](../README.md).
 
 ## Documents
 

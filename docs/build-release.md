@@ -3,7 +3,7 @@ type: Guide
 title: "Build, CI and release"
 description: "How okf-cli is built and tested (bytecode 17 on JDK 25, the three jars and the licence files inside them), what CI runs, how a GitHub release gets its jar, checksum and build-provenance attestation, how this repo checks its own docs bundle, and where the third-party licences live."
 tags: [build, ci, release, attestation, licences]
-code_paths: ["build.gradle.kts", "gradle.properties", "gradle/libs.versions.toml", ".github/workflows/**", "src/main/resources/okf/version.properties", "LICENSE", "NOTICE", "third-party-licenses/**"]
+code_paths: ["build.gradle.kts", "gradle.properties", "gradle/libs.versions.toml", ".github/workflows/**", "src/main/resources/com/sharpbitstudio/okf/version.properties", "LICENSE", "NOTICE", "third-party-licenses/**"]
 ---
 # Build, CI and release
 
@@ -15,8 +15,8 @@ java -jar build/libs/okf-cli-<version>-all.jar version
 ```
 
 The version comes from `gradle.properties` (`1.0.0-SNAPSHOT` between releases); the release workflow passes
-`-Pversion=<tag without the v>`. `okf version` prints it from `okf/version.properties`, which is expanded at
-build time.
+`-Pversion=<tag without the v>`. `okf version` prints it from `com/sharpbitstudio/okf/version.properties`, which
+is expanded at build time.
 
 `build` produces three jars under `build/libs/`:
 
@@ -97,8 +97,8 @@ Until the first release, there are no assets: build the jar from source ([Build]
 ## Own docs bundle
 
 This repo checks its own `docs/` with the code it builds, not with a released jar. The `okfIndex` / `okfCheck` /
-`okfImpact` tasks in `build.gradle.kts` run `okf.cli.Main` on `sourceSets.main.runtimeClasspath`, with the
-settings in `okf.yaml` (`index_command: ./gradlew okfIndex`). Two consequences:
+`okfImpact` tasks in `build.gradle.kts` run `com.sharpbitstudio.okf.cli.Main` on `sourceSets.main.runtimeClasspath`,
+with the settings in `okf.yaml` (`index_command: ./gradlew okfIndex`). Two consequences:
 
 - CI needs no previous release.
 - A change to the checks is applied to these docs in the same build.
@@ -110,11 +110,11 @@ settings in `okf.yaml` (`index_command: ./gradlew okfIndex`). Two consequences:
 Each `-Pokf.*` property that is set becomes one `--<option>=<value>` (an empty value is passed as such:
 `-Pokf.base=` skips the impact check).
 
-[reference.md](reference.md) carries `code_paths` on `src/main/kotlin/okf/**`, and this document on the build,
-the workflows and the licence files. A change there therefore fails `okfImpact` on a branch until the matching
-document is updated, or until the change is acknowledged with a commit trailer naming it:
-`Docs-Impact: reference — <reason>` for a Kotlin change, `Docs-Impact: build-release — <reason>` for a change to
-the build, the workflows or the licence files.
+[reference.md](reference.md) carries `code_paths` on `src/main/kotlin/com/sharpbitstudio/okf/**`, and this
+document on the build, the workflows and the licence files. A change there therefore fails `okfImpact` on a
+branch until the matching document is updated, or until the change is acknowledged with a commit trailer naming
+it: `Docs-Impact: reference — <reason>` for a Kotlin change, `Docs-Impact: build-release — <reason>` for a change
+to the build, the workflows or the licence files.
 
 ## Third-party licences
 

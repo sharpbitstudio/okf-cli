@@ -100,11 +100,12 @@ jobs:
 
   okf:
     # This repo's own docs/ OKF bundle, checked by the code this commit builds (okfIndex / okfCheck /
-    # okfImpact in build.gradle.kts run okf.cli.Main from sourceSets.main — no released jar needed).
-    # okfImpact lists docs whose `code_paths` match changed code but were neither updated nor acknowledged
-    # by a `Docs-Impact:` commit trailer (e.g. docs/reference.md on any src/main/kotlin/okf/** change) —
-    # failures on branches, warn-only on a push to main (a squash merge drops the trailers) and on
-    # dependabot/** (Dependabot cannot add a trailer). Fix locally with
+    # okfImpact in build.gradle.kts run com.sharpbitstudio.okf.cli.Main from sourceSets.main — no released
+    # jar needed). okfImpact lists docs whose `code_paths` match changed code but were neither updated nor
+    # acknowledged by a `Docs-Impact:` commit trailer (e.g. docs/reference.md on any
+    # src/main/kotlin/com/sharpbitstudio/okf/** change) — failures on branches, warn-only on a push to main
+    # (a squash merge drops the trailers) and on dependabot/** (Dependabot cannot add a trailer).
+    # Fix locally with
     # `./gradlew okfIndex okfCheck okfImpact -Pokf.strict=true -Pokf.refs.strict=true -Pokf.codePaths.required=true -Pokf.impact.strict=true`.
     # `OKF docs bundle check (+ docs impact)` is meant to be a status check required on `main` (a ruleset in the
     # repository settings, not in this tree): renaming this job means updating the ruleset in the same step. The
