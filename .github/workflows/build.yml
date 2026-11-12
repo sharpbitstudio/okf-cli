@@ -1,0 +1,141 @@
+name: build
+
+on:
+  # Manual trigger (gh workflow run / Actions UI). GitHub only exposes workflow_dispatch
+  # once this file is on the default branch.
+  workflow_dispatch:
+  # A push to any branch of this repository (Dependabot's included) runs the gate, and its commit status
+  # is what the PR's Checks tab shows, so a PR from a branch of this repository needs no second run for
+  # the same SHA.
+  push:
+    branches:
+      - '**'
+  # PRs from forks, whose branches are never pushed here: the job-level `if` below skips PRs from
+  # branches of this repository (their push run covers them). A fork PR runs with a read-only token and
+  # no secrets; never use pull_request_target here.
+  pull_request:
+
+# A newer push to the same branch cancels the older, still-running build, except on main, where every
+# pushed commit gets its own complete run.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build + test
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Nothing in this job talks to the remote after the checkout.
+          persist-credentials: false
+
+      - name: Set up JDK 25 (Temurin)
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 25
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6.4.0
+        with:
+          # Validates the checked-in wrapper jar against known-good checksums and caches ~/.gradle.
+          validate-wrappers: true
+          cache-cleanup: on-success
+
+      - name: Build + test
+        # Compiles (bytecode 17), runs the test suite (OkfGitTest / OkfCliTest need git, which the
+        # runner has) and assembles the thin, sources and `all` (fat CLI) jars.
+        run: ./gradlew build --stacktrace
+
+      - name: Smoke-test the fat jar
+        run: java -jar build/libs/okf-cli-*-all.jar version
+
+      # The jars target Java 17 (consumers may run the fat jar there): run it on a real Java 17 runtime,
+      # against a minimal committed fixture repo, so a Java 18+ API slipping into the code fails here.
+      - name: Set up JDK 17 (Temurin)
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Smoke-test the fat jar on Java 17
+        run: |
+          set -euo pipefail
+          java -version
+          JAR="$(ls "$GITHUB_WORKSPACE"/build/libs/okf-cli-*-all.jar)"
+          java -jar "$JAR" version
+          FIXTURE="$RUNNER_TEMP/okf-fixture"
+          mkdir -p "$FIXTURE/docs"
+          cd "$FIXTURE"
+          git init -q -b main
+          printf 'schema_version: 1\nrepo: fixture\n' > okf.yaml
+          printf -- '---\nokf_version: "0.2"\n---\n# Docs\n' > docs/index.md
+          java -jar "$JAR" index --repo="$FIXTURE"
+          git add -A
+          git -c user.name=ci -c user.email=ci@localhost -c commit.gpgsign=false commit -q -m fixture
+          java -jar "$JAR" check --repo="$FIXTURE" --strict --refs-strict --code-paths-required
+
+      - name: Upload test reports
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-reports
+          path: |
+            build/reports/tests/
+            build/test-results/
+          retention-days: 7
+          if-no-files-found: ignore
+
+  okf:
+    # This repo's own docs/ OKF bundle, checked by the code this commit builds (okfIndex / okfCheck /
+    # okfImpact in build.gradle.kts run okf.cli.Main from sourceSets.main — no released jar needed).
+    # okfImpact lists docs whose `code_paths` match changed code but were neither updated nor acknowledged
+    # by a `Docs-Impact:` commit trailer (e.g. docs/reference.md on any src/main/kotlin/okf/** change) —
+    # failures on branches, warn-only on a push to main (a squash merge drops the trailers) and on
+    # dependabot/** (Dependabot cannot add a trailer). Fix locally with
+    # `./gradlew okfIndex okfCheck okfImpact -Pokf.strict=true -Pokf.refs.strict=true -Pokf.codePaths.required=true -Pokf.impact.strict=true`.
+    name: OKF docs bundle check (+ docs impact)
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      # Full history + origin/* refs: okfImpact diffs against the merge-base with origin/main and reads
+      # the commit trailers in between.
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          # okfImpact reads the fetched history locally; nothing talks to the remote afterwards.
+          persist-credentials: false
+
+      - name: Set up JDK 25 (Temurin)
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 25
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6.4.0
+        with:
+          validate-wrappers: true
+          cache-cleanup: on-success
+
+      - name: OKF docs bundle check (+ docs impact)
+        env:
+          # On a fork PR its base branch; on a push to main the commit the push moved main from (all zeros
+          # for a newly created ref → okfImpact skips); on any other branch (and workflow_dispatch) origin/main.
+          OKF_BASE: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || github.event_name == 'push' && github.ref == 'refs/heads/main' && github.event.before || 'origin/main' }}
+          # Renders as the string `true`/`false` — exactly what the CLI's strict flag parse accepts.
+          OKF_IMPACT_STRICT: ${{ github.ref != 'refs/heads/main' && !startsWith(github.ref_name, 'dependabot/') }}
+        run: >-
+          ./gradlew okfCheck okfImpact -Pokf.strict=true -Pokf.refs.strict=true
+          -Pokf.codePaths.required=true -Pokf.base="$OKF_BASE" -Pokf.impact.strict="$OKF_IMPACT_STRICT"
+          --stacktrace

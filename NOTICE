@@ -1,0 +1,26 @@
+okf-cli
+Copyright 2026 SharpBit Studio
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+The self-contained -all jar also bundles third-party components: Kotlin Standard Library (incl. code
+under BSD-3-Clause and BSL-1.0), JetBrains Annotations, SnakeYAML. Their licences are in
+META-INF/licenses/ of that jar:
+
+- Kotlin Standard Library: Apache-2.0
+    META-INF/licenses/kotlin-stdlib/LICENSE.txt
+    META-INF/licenses/kotlin-stdlib/NOTICE.txt (upstream NOTICE)
+  - code derived from GWT: Apache-2.0
+    META-INF/licenses/kotlin-stdlib/gwt_license.txt
+  - code derived from ThreeTen backport: BSD-3-Clause
+    META-INF/licenses/kotlin-stdlib/threetenbp_license.txt
+  - code derived from Guava: Apache-2.0
+    META-INF/licenses/kotlin-stdlib/guava_license.txt
+  - code derived from Boost: BSL-1.0
+    META-INF/licenses/kotlin-stdlib/boost_LICENSE.txt
+- JetBrains Annotations: Apache-2.0
+    META-INF/licenses/jetbrains-annotations/LICENSE-2.0.txt
+- SnakeYAML: Apache-2.0
+    META-INF/licenses/snakeyaml/LICENSE.txt
+
+META-INF/licenses/README.md lists the source of each file.

@@ -1,0 +1,191 @@
+name: release
+
+# Runs when a GitHub release (or pre-release) is published for a tag `v<semver>`: builds and tests that tag
+# with the version taken from the tag, then creates a build provenance attestation for the `all` jar and
+# attaches the jar and its `.sha256` to the release. Nothing is published to a package registry.
+
+on:
+  release:
+    types: [published]
+
+# Two runs for the same tag never overlap.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+# Least privilege by default; only release-assets, which never runs Gradle, gets write permissions.
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build, test and package
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+
+    steps:
+      - name: Resolve the version from the tag
+        id: version
+        run: |
+          set -euo pipefail
+          # SemVer 2.0 core + optional pre-release (no leading zeros, no empty identifiers); build metadata
+          # (`+…`) is not accepted, since the version becomes part of the jar file name.
+          SEMVER='^v((0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(\.(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?)$'
+          if ! [[ "$GITHUB_REF_NAME" =~ $SEMVER ]]; then
+            echo "::error::Invalid release tag: '$GITHUB_REF_NAME'. Expected v<semver> like v1.2.3 or v1.2.3-rc.1 (no build metadata)"
+            exit 1
+          fi
+          VERSION="${BASH_REMATCH[1]}"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Release version: $VERSION"
+
+      - uses: actions/checkout@v7
+        with:
+          # The commit of the release event, which the attestation names as its source (a re-run keeps it,
+          # even if the tag was moved since).
+          ref: ${{ github.sha }}
+          # The build never talks to the remote again.
+          persist-credentials: false
+
+      - name: Set up JDK 25 (Temurin)
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 25
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6.4.0
+        with:
+          # Validates the checked-in wrapper jar against known-good checksums.
+          validate-wrappers: true
+          # A released, attested jar is built from a cold Gradle cache, never from cache state restored from
+          # other runs.
+          cache-disabled: true
+
+      - name: Build + test
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: ./gradlew build -Pversion="$VERSION" --stacktrace
+
+      - name: Smoke-test the fat jar
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          OUT="$(java -jar "build/libs/okf-cli-$VERSION-all.jar" version)"
+          if [ "$OUT" != "okf-cli $VERSION" ]; then
+            echo "::error::'okf version' printed '$OUT', expected 'okf-cli $VERSION'"
+            exit 1
+          fi
+          echo "$OUT"
+
+      # This repo's own docs/ OKF bundle, checked by the code this tag builds.
+      - name: OKF docs bundle check
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: >-
+          ./gradlew okfCheck -Pversion="$VERSION" -Pokf.strict=true -Pokf.refs.strict=true
+          -Pokf.codePaths.required=true --stacktrace
+
+      # The jars target Java 17 (consumers may run the fat jar there): run it on a real Java 17 runtime,
+      # against a minimal fixture repo, so a Java 18+ API slipping into the code fails here.
+      - name: Set up JDK 17 (Temurin)
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Smoke-test the fat jar on Java 17
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          java -version
+          JAR="$GITHUB_WORKSPACE/build/libs/okf-cli-$VERSION-all.jar"
+          java -jar "$JAR" version
+          FIXTURE="$RUNNER_TEMP/okf-fixture"
+          mkdir -p "$FIXTURE/docs"
+          cd "$FIXTURE"
+          git init -q -b main
+          printf 'schema_version: 1\nrepo: fixture\n' > okf.yaml
+          printf -- '---\nokf_version: "0.2"\n---\n# Docs\n' > docs/index.md
+          java -jar "$JAR" index --repo="$FIXTURE"
+          git add -A
+          git -c user.name=ci -c user.email=ci@localhost -c commit.gpgsign=false commit -q -m fixture
+          java -jar "$JAR" check --repo="$FIXTURE" --strict --refs-strict --code-paths-required
+
+      # `sha256sum` format (`<hex>  <file name>`), so `sha256sum -c` verifies the downloaded jar.
+      - name: Checksum the all jar
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        working-directory: build/libs
+        run: |
+          set -euo pipefail
+          JAR="okf-cli-$VERSION-all.jar"
+          sha256sum "$JAR" > "$JAR.sha256"
+          {
+            echo "### okf-cli $VERSION"
+            echo
+            echo "SHA-256 of \`$JAR\`: \`$(cut -d ' ' -f 1 "$JAR.sha256")\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the all jar and its checksum
+        uses: actions/upload-artifact@v7
+        with:
+          name: okf-cli-all-jar
+          path: |
+            build/libs/okf-cli-${{ steps.version.outputs.version }}-all.jar
+            build/libs/okf-cli-${{ steps.version.outputs.version }}-all.jar.sha256
+          retention-days: 7
+          if-no-files-found: error
+
+      - name: Upload test reports
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-reports
+          path: |
+            build/reports/tests/
+            build/test-results/
+          retention-days: 7
+          if-no-files-found: ignore
+
+  # Attests and attaches the jar the build job produced. A separate job, so the write permissions never see
+  # the Gradle build; it can be re-run on its own (--clobber replaces assets already attached).
+  release-assets:
+    name: Attest and attach the all jar
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+
+    steps:
+      - name: Download the all jar and its checksum
+        uses: actions/download-artifact@v8
+        with:
+          name: okf-cli-all-jar
+
+      - name: Verify the checksum
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+        run: sha256sum -c "okf-cli-$VERSION-all.jar.sha256"
+
+      - name: Attest build provenance
+        uses: actions/attest@v4
+        with:
+          subject-path: okf-cli-${{ needs.build.outputs.version }}-all.jar
+
+      - name: Upload to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          set -euo pipefail
+          JAR="okf-cli-$VERSION-all.jar"
+          gh release upload "$GITHUB_REF_NAME" "$JAR" "$JAR.sha256" --clobber

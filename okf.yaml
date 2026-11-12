@@ -1,0 +1,6 @@
+# OKF (Open Knowledge Format) settings for this repo's own docs/ bundle, checked by the code this repo
+# builds (okfIndex / okfCheck / okfImpact in build.gradle.kts). Schema: docs/reference.md.
+schema_version: 1
+repo: okf-cli
+index_command: ./gradlew okfIndex
+index_language: en
