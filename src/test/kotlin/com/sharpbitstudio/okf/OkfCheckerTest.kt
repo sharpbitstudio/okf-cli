@@ -14,7 +14,7 @@ class OkfCheckerTest {
     @Test
     fun `valid ADR passes`() {
         bundle("adr/ADR-001-test.md" to adr())
-        val result = OkfChecker.check(root, strict = true, now = NOW)
+        val result = OkfChecker.check(root, TestConfigs.SR, strict = true, now = NOW)
         assertEquals(emptyList<String>(), result.problems)
         assertEquals(1, result.validated)
     }
@@ -151,7 +151,7 @@ class OkfCheckerTest {
         val text = "\uFEFF" + adr(body = "# ADR\r\n\r\n**Update 2026-07-05:** x\r\n", changes = arrayOf("amended" to "[2026-07-05]"))
             .replace("\r\n", "\n").replace("\n", "\r\n")
         bundle("adr/ADR-001-test.md" to text)
-        val result = OkfChecker.check(root, strict = true, now = NOW)
+        val result = OkfChecker.check(root, TestConfigs.SR, strict = true, now = NOW)
         assertEquals(emptyList<String>(), result.problems)
         assertEquals(1, result.validated)
     }
@@ -169,10 +169,10 @@ class OkfCheckerTest {
     @Test
     fun `unmigrated file fails only in strict mode`() {
         bundle("notes.md" to "# Notes without frontmatter\n")
-        val lenient = OkfChecker.check(root, strict = false, now = NOW)
+        val lenient = OkfChecker.check(root, TestConfigs.SR, strict = false, now = NOW)
         assertEquals(emptyList<String>(), lenient.problems)
         assertEquals(listOf("notes.md"), lenient.unmigrated)
-        val strict = OkfChecker.check(root, strict = true, now = NOW)
+        val strict = OkfChecker.check(root, TestConfigs.SR, strict = true, now = NOW)
         assertProblem(strict.problems, "notes.md: no frontmatter (strict mode")
     }
 
@@ -187,7 +187,7 @@ class OkfCheckerTest {
     fun `frontmatter after blank lines is reported in strict and lenient mode`() {
         bundle("guide.md" to "\n\n---\ntype: Guide\n---\n")
         listOf(false, true).forEach { strict ->
-            val result = OkfChecker.check(root, strict = strict, now = NOW)
+            val result = OkfChecker.check(root, TestConfigs.SR, strict = strict, now = NOW)
             assertProblem(result.problems, "guide.md: frontmatter must start on line 1")
             assertEquals(emptyList<String>(), result.unmigrated, "strict=$strict")
         }
@@ -327,7 +327,7 @@ class OkfCheckerTest {
             "invite-respond/API_PLAN.md" to satellite(),
             "evening-digest/API_LOG.md" to satellite(hub = "features/evening-digest", codePaths = "[]"),
         )
-        val result = OkfChecker.check(root, strict = true, now = NOW, codePathsRequired = true, hubRepo = HUB)
+        val result = OkfChecker.check(root, TestConfigs.SR.copy(hubRepo = HUB), strict = true, now = NOW, codePathsRequired = true)
         assertEquals(emptyList<String>(), result.problems)
         assertEquals(2, result.validated)
     }
@@ -346,7 +346,7 @@ class OkfCheckerTest {
             "i.md" to satellite(hub = "features/-x"),
             "ok.md" to satellite(hub = "features/otp2-login"),
         )
-        val problems = OkfChecker.check(root, strict = false, now = NOW, hubRepo = HUB).problems
+        val problems = OkfChecker.check(root, TestConfigs.SR.copy(hubRepo = HUB), strict = false, now = NOW).problems
         assertProblem(problems, "a.md: Satellite Note requires `hub: features/<slug>` — the hub Feature Record it belongs to")
         assertProblem(problems, "b.md: Satellite Note requires `hub: features/<slug>`")
         assertProblem(problems, "c.md: hub 'features/Invite-Respond' must be `features/<slug>` (slug: lowercase letters and digits")
@@ -367,7 +367,7 @@ class OkfCheckerTest {
             "blank.md" to satellite(hub = "\"  \""),
             "bad.md" to satellite(hub = "\" features/X \""),
         )
-        val problems = OkfChecker.check(root, strict = false, now = NOW, hubRepo = HUB).problems
+        val problems = OkfChecker.check(root, TestConfigs.SR.copy(hubRepo = HUB), strict = false, now = NOW).problems
         assertEquals(
             listOf(
                 "bad.md: hub 'features/X' must be `features/<slug>` (slug: lowercase letters and digits, words joined by single hyphens)",
@@ -380,7 +380,7 @@ class OkfCheckerTest {
     @Test
     fun `hub and repos on a document without type name the type as missing`() {
         bundle("x.md" to "---\nhub: features/x\nrepos: [mobile-proto]\n---\n")
-        val problems = OkfChecker.check(root, strict = false, now = NOW, hubRepo = HUB, externalRepos = setOf("mobile-proto")).problems
+        val problems = OkfChecker.check(root, TestConfigs.SR.copy(hubRepo = HUB, externalRepos = setOf("mobile-proto")), strict = false, now = NOW).problems
         assertProblem(problems, "x.md: `hub` is only allowed on Satellite Notes (got type '<missing>')")
         assertProblem(problems, "x.md: `repos` is only allowed on Feature Records (got type '<missing>')")
         assertTrue(problems.none { "'null'" in it }, problems.toString())
@@ -395,7 +395,7 @@ class OkfCheckerTest {
     @Test
     fun `hub is only allowed on satellite notes`() {
         bundle("guide.md" to "---\ntype: Guide\nhub: features/invite-respond\n---\n", "features/x.md" to feature("hub: features/x\n"))
-        val problems = OkfChecker.check(root, strict = false, now = NOW, hubRepo = HUB).problems
+        val problems = OkfChecker.check(root, TestConfigs.SR.copy(hubRepo = HUB), strict = false, now = NOW).problems
         assertProblem(problems, "guide.md: `hub` is only allowed on Satellite Notes (got type 'Guide')")
         assertProblem(problems, "features/x.md: `hub` is only allowed on Satellite Notes (got type 'Feature Record')")
         assertEquals(2, problems.size, problems.toString())
@@ -404,11 +404,11 @@ class OkfCheckerTest {
     @Test
     fun `code_paths required covers satellite notes`() {
         bundle("note.md" to satellite(codePaths = null))
-        val lenient = OkfChecker.check(root, strict = true, now = NOW, hubRepo = HUB)
+        val lenient = OkfChecker.check(root, TestConfigs.SR.copy(hubRepo = HUB), strict = true, now = NOW)
         assertEquals(emptyList<String>(), lenient.problems)
         assertEquals(listOf("note.md"), lenient.codePathsMissing)
         assertEquals(mapOf(OkfChecker.CODE_PATHS_SATELLITE_NOTES to 1), lenient.codePathsMissingByKind)
-        val required = OkfChecker.check(root, strict = true, now = NOW, codePathsRequired = true, hubRepo = HUB).problems
+        val required = OkfChecker.check(root, TestConfigs.SR.copy(hubRepo = HUB), strict = true, now = NOW, codePathsRequired = true).problems
         assertEquals(
             listOf(
                 "note.md: `code_paths` is required on Satellite Notes — list the repo-root globs of the code it describes, " +
@@ -426,7 +426,7 @@ class OkfCheckerTest {
             "features/scalar.md" to feature("repos: mobile-proto\n"),
             "features/bad.md" to feature("repos: [mobile-proto, \"\", 3, mobile-proto, unknown-repo]\n"),
         )
-        val problems = OkfChecker.check(root, strict = false, now = NOW, externalRepos = setOf("mobile-proto", "mobile-app")).problems
+        val problems = OkfChecker.check(root, TestConfigs.SR.copy(externalRepos = setOf("mobile-proto", "mobile-app")), strict = false, now = NOW).problems
         assertProblem(problems, "features/scalar.md: repos must be a YAML list of repository names from external_repos")
         assertProblem(problems, "features/bad.md: repos[1] must be a non-empty string, got ''")
         assertProblem(problems, "features/bad.md: repos[2] must be a non-empty string, got '3'")
@@ -438,7 +438,7 @@ class OkfCheckerTest {
     @Test
     fun `repos is only allowed on feature records`() {
         bundle("guide.md" to "---\ntype: Guide\nrepos: [mobile-proto]\n---\n", "note.md" to satellite(extra = "repos: [mobile-proto]\n"))
-        val problems = OkfChecker.check(root, strict = false, now = NOW, hubRepo = HUB, externalRepos = setOf("mobile-proto")).problems
+        val problems = OkfChecker.check(root, TestConfigs.SR.copy(hubRepo = HUB, externalRepos = setOf("mobile-proto")), strict = false, now = NOW).problems
         assertProblem(problems, "guide.md: `repos` is only allowed on Feature Records (got type 'Guide')")
         assertProblem(problems, "note.md: `repos` is only allowed on Feature Records (got type 'Satellite Note')")
         assertEquals(2, problems.size, problems.toString())
@@ -465,7 +465,7 @@ class OkfCheckerTest {
         assertEquals(emptyList<String>(), problems())
     }
 
-    private fun problems(): List<String> = OkfChecker.check(root, strict = false, now = NOW).problems
+    private fun problems(): List<String> = OkfChecker.check(root, TestConfigs.SR, strict = false, now = NOW).problems
 
     /** Satellite Note frontmatter; `null` drops [hub] / [codePaths]. */
     private fun satellite(hub: String? = "features/invite-respond", codePaths: String? = "[]", extra: String = ""): String =
@@ -486,12 +486,12 @@ class OkfCheckerTest {
         root.resolve("index.md").writeText(head + "<!-- okf:repos-start -->\n<!-- okf:repos-end -->\n")
         assertEquals(
             listOf("index.md: Repos section out of date or edited by hand — run ./gradlew okfIndex"),
-            OkfChecker.check(root, strict = true, now = NOW, satellites = satellites).problems,
+            OkfChecker.check(root, TestConfigs.SR.copy(satellites = satellites), strict = true, now = NOW).problems,
         )
 
-        val fresh = head + "<!-- okf:repos-start -->\n" + OkfIndexRenderer.renderReposBlock(satellites) + "\n<!-- okf:repos-end -->\n"
+        val fresh = head + "<!-- okf:repos-start -->\n" + OkfIndexRenderer.renderReposBlock(satellites, TestConfigs.INDEX_COMMAND) + "\n<!-- okf:repos-end -->\n"
         root.resolve("index.md").writeText(fresh.replace("\n", "\r\n"))
-        assertEquals(emptyList<String>(), OkfChecker.check(root, strict = true, now = NOW, satellites = satellites).problems)
+        assertEquals(emptyList<String>(), OkfChecker.check(root, TestConfigs.SR.copy(satellites = satellites), strict = true, now = NOW).problems)
 
         root.resolve("index.md").writeText(head)
         assertEquals(
@@ -499,16 +499,16 @@ class OkfCheckerTest {
                 "index.md: the Repos section needs one `<!-- okf:repos-start -->` line followed by one `<!-- okf:repos-end -->` line " +
                     "(found 0 start / 0 end marker line(s)) — add them, then run ./gradlew okfIndex",
             ),
-            OkfChecker.check(root, strict = true, now = NOW, satellites = satellites).problems,
+            OkfChecker.check(root, TestConfigs.SR.copy(satellites = satellites), strict = true, now = NOW).problems,
         )
     }
 
     @Test
     fun `without satellites the Repos section is not checked`() {
         bundle()
-        assertEquals(emptyList<String>(), OkfChecker.check(root, strict = true, now = NOW).problems)
+        assertEquals(emptyList<String>(), OkfChecker.check(root, TestConfigs.SR, strict = true, now = NOW).problems)
         root.resolve("index.md").writeText("---\nokf_version: \"0.2\"\n---\n# Docs\n<!-- okf:repos-start -->\nhand-written\n<!-- okf:repos-end -->\n")
-        assertEquals(emptyList<String>(), OkfChecker.check(root, strict = true, now = NOW).problems)
+        assertEquals(emptyList<String>(), OkfChecker.check(root, TestConfigs.SR, strict = true, now = NOW).problems)
     }
 
     /** Writes a minimal bundle (root index.md, `adr/`, `features/`), the given files, then fresh sub-indexes. */
@@ -517,8 +517,8 @@ class OkfCheckerTest {
         root.resolve(OkfIndexRenderer.ADR_DIR).mkdirs()
         root.resolve(OkfIndexRenderer.FEATURES_DIR).mkdirs()
         files.forEach { (path, text) -> root.resolve(path).apply { parentFile.mkdirs() }.writeText(text) }
-        writeIndex(OkfIndexRenderer.ADR_DIR, OkfIndexRenderer::renderAdrIndex)
-        writeIndex(OkfIndexRenderer.FEATURES_DIR, OkfIndexRenderer::renderFeaturesIndex)
+        writeIndex(OkfIndexRenderer.ADR_DIR) { OkfIndexRenderer.renderAdrIndex(it, TestConfigs.INDEX_COMMAND, IndexLanguage.SR) }
+        writeIndex(OkfIndexRenderer.FEATURES_DIR) { OkfIndexRenderer.renderFeaturesIndex(it, TestConfigs.INDEX_COMMAND, IndexLanguage.SR) }
     }
 
     // Fixtures with deliberately broken ADRs may not render; the checker then reports that itself.

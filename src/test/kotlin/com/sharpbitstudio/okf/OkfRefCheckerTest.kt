@@ -293,16 +293,16 @@ class OkfRefCheckerTest {
         root.resolve("guide.md").writeText("---\ntype: Guide\n---\n# G\n\n`Gone.java`\n")
         root.resolve("log.md").writeText("# Log\n\n`Gone2.java`\n")
         root.resolve("notes.md").writeText("# Unmigrated\n\n`Gone3.java`\n")
-        root.resolve("adr/index.md").writeText(OkfIndexRenderer.renderAdrIndex(root.resolve("adr")))
-        root.resolve("features/index.md").writeText(OkfIndexRenderer.renderFeaturesIndex(root.resolve("features")))
+        root.resolve("adr/index.md").writeText(OkfIndexRenderer.renderAdrIndex(root.resolve("adr"), TestConfigs.INDEX_COMMAND, IndexLanguage.SR))
+        root.resolve("features/index.md").writeText(OkfIndexRenderer.renderFeaturesIndex(root.resolve("features"), TestConfigs.INDEX_COMMAND, IndexLanguage.SR))
         val now = Instant.parse("2026-09-25T00:00:00Z")
 
-        val lenient = OkfChecker.check(root, strict = false, now = now, refs = checker(), refsStrict = false)
+        val lenient = OkfChecker.check(root, TestConfigs.SR, strict = false, now = now, refs = checker(), refsStrict = false)
         assertEquals(emptyList<String>(), lenient.problems)
         assertEquals(listOf("guide.md:6: `Gone.java`: file not found"), lenient.warnings.map { it.substringBefore(" in the repo") })
         assertEquals(1, lenient.refsChecked)
 
-        val strict = OkfChecker.check(root, strict = false, now = now, refs = checker(), refsStrict = true)
+        val strict = OkfChecker.check(root, TestConfigs.SR, strict = false, now = now, refs = checker(), refsStrict = true)
         assertEquals(listOf("guide.md:6: `Gone.java`: file not found"), strict.problems.map { it.substringBefore(" in the repo") })
         assertEquals(listOf(RefFinding("guide.md", 6, strict.refFindings.single().message)), strict.refFindings)
     }

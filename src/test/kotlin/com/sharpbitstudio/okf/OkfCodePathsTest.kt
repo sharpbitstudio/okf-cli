@@ -96,14 +96,14 @@ class OkfCodePathsTest {
         bundle.resolve("adr/ADR-003-c.md").writeText("---\n${adr}status: draft\nadr_status: Proposed\n---\n# C\n")
         bundle.resolve("features/f.md").writeText("---\ntype: Feature Record\n---\n# F\n")
         bundle.resolve("guide.md").writeText("---\ntype: Guide\n---\n# G\n")
-        bundle.resolve("adr/index.md").writeText(OkfIndexRenderer.renderAdrIndex(bundle.resolve("adr")))
-        bundle.resolve("features/index.md").writeText(OkfIndexRenderer.renderFeaturesIndex(bundle.resolve("features")))
+        bundle.resolve("adr/index.md").writeText(OkfIndexRenderer.renderAdrIndex(bundle.resolve("adr"), TestConfigs.INDEX_COMMAND, IndexLanguage.SR))
+        bundle.resolve("features/index.md").writeText(OkfIndexRenderer.renderFeaturesIndex(bundle.resolve("features"), TestConfigs.INDEX_COMMAND, IndexLanguage.SR))
         val refs = OkfRefChecker(index, "docs")
 
-        val lenient = OkfChecker.check(bundle, strict = true, refs = refs).problems
+        val lenient = OkfChecker.check(bundle, TestConfigs.SR, strict = true, refs = refs).problems
         assertEquals(listOf("adr/ADR-001-a.md: code_paths[0] '$OTP/gone/**' matches no file in the repo"), lenient)
 
-        val required = OkfChecker.check(bundle, strict = true, refs = refs, codePathsRequired = true).problems
+        val required = OkfChecker.check(bundle, TestConfigs.SR, strict = true, refs = refs, codePathsRequired = true).problems
         assertProblem(required, "adr/ADR-002-b.md: `code_paths` is required on Accepted/Resolved ADRs")
         assertProblem(required, "features/f.md: `code_paths` is required on Feature Records")
         assertEquals(3, required.size, "Proposed ADRs and Guides stay optional: $required")
@@ -124,7 +124,7 @@ class OkfCodePathsTest {
         bundle.resolve("features/README.md").writeText("---\ntype: Convention\n---\n# Conventions\n")
         bundle.resolve("features/f.md").writeText("---\ntype: Feature Record\ncode_paths: []\n---\n# F\n")
 
-        val result = OkfChecker.check(bundle, strict = true, codePathsRequired = true)
+        val result = OkfChecker.check(bundle, TestConfigs.SR, strict = true, codePathsRequired = true)
         val required = result.problems.filter { "`code_paths` is required" in it }
         assertEquals(1, required.size, "only the Resolved ADR lacks code_paths: $required")
         assertProblem(required, "adr/ADR-001-resolved.md: `code_paths` is required on Accepted/Resolved ADRs")
@@ -132,7 +132,7 @@ class OkfCodePathsTest {
         assertEquals(mapOf(OkfChecker.CODE_PATHS_ADRS to 1), result.codePathsMissingByKind)
         assertEquals(
             listOf("adr/ADR-001-resolved.md"),
-            OkfChecker.check(bundle, strict = true).codePathsMissing,
+            OkfChecker.check(bundle, TestConfigs.SR, strict = true).codePathsMissing,
             "missing code_paths is reported even when not required",
         )
     }

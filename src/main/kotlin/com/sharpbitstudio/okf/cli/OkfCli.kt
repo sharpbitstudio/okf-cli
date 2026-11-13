@@ -136,16 +136,12 @@ class OkfCli(
         }
         val result = OkfChecker.check(
             bundle,
+            config,
             args.strict,
             now = now(),
             refs = refs,
             refsStrict = args.refsStrict,
             codePathsRequired = args.codePathsRequired,
-            indexCommand = config.indexCommand,
-            hubRepo = config.hubRepo,
-            externalRepos = config.externalRepos,
-            satellites = config.satellites,
-            indexLanguage = config.indexLanguage,
         )
         result.warnings.forEach { err.println("OKF WARNING: $it") }
         // Workflow commands on stdout become PR annotations on the offending doc line.
