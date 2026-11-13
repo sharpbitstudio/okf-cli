@@ -171,7 +171,7 @@ class OkfCli(
             )
         }
         if (result.problems.isNotEmpty()) {
-            throw Failure("okfCheck found ${result.problems.size} problem(s):\n" + result.problems.joinToString("\n") { "  - $it" })
+            throw Failure("okf check found ${result.problems.size} problem(s):\n" + result.problems.joinToString("\n") { "  - $it" })
         }
         val refSummary = when {
             result.refFindings.isEmpty() -> ", ${result.refsChecked} code references resolved"
@@ -179,7 +179,7 @@ class OkfCli(
                 ", ${result.refsChecked} code references checked " +
                     "(${result.refFindings.size} warnings; ${CliArgs.REFS_STRICT} fails on them)"
         }
-        out.println("okfCheck OK: ${result.validated} documents with frontmatter validated$refSummary.")
+        out.println("okf check OK: ${result.validated} documents with frontmatter validated$refSummary.")
         return EXIT_OK
     }
 
@@ -197,7 +197,7 @@ class OkfCli(
 
         val requested = args.base
         if (requested != null && (requested.isBlank() || ZERO_SHA.matches(requested.trim()))) {
-            out.println("okfImpact skipped: no base to compare against (${CliArgs.BASE}='$requested').")
+            out.println("okf impact skipped: no base to compare against (${CliArgs.BASE}='$requested').")
             return EXIT_OK
         }
         val candidates = if (requested == null) listOf("origin/${config.baseRef}", config.baseRef) else listOf(requested.trim())
@@ -232,12 +232,12 @@ class OkfCli(
         reportImpact(strict, result.findings)
         out.println(
             when {
-                changed.isEmpty() && commits.isEmpty() -> "okfImpact: nothing changed since $against."
+                changed.isEmpty() && commits.isEmpty() -> "okf impact: nothing changed since $against."
                 result.documents == 0 ->
-                    "okfImpact: 0 documents with code_paths — nothing to match (${result.changedCode.size} changed files outside $bundlePath/ since $against)."
+                    "okf impact: 0 documents with code_paths — nothing to match (${result.changedCode.size} changed files outside $bundlePath/ since $against)."
                 else -> {
                     val counts = ImpactState.entries.joinToString(", ") { state -> "${result.entries.count { it.state == state }} ${state.label}" }
-                    "okfImpact: ${result.changedCode.size} changed files outside $bundlePath/ since $against; " +
+                    "okf impact: ${result.changedCode.size} changed files outside $bundlePath/ since $against; " +
                         "${result.documents} documents with code_paths, ${result.entries.size} impacted ($counts)" +
                         if (result.deprecatedSkipped > 0) "; ${result.deprecatedSkipped} deprecated skipped." else "."
                 }
@@ -253,7 +253,7 @@ class OkfCli(
             findings.forEach { out.println(OkfGithubActions.annotation(level, IMPACT_TITLE, it.message, it.doc, it.doc?.let { 1 })) }
         }
         if (strict) {
-            throw Failure("okfImpact found ${findings.size} problem(s):\n" + findings.joinToString("\n") { "  - $it" })
+            throw Failure("okf impact found ${findings.size} problem(s):\n" + findings.joinToString("\n") { "  - $it" })
         }
         // Under GitHub Actions the annotations carry the doc findings; locally the hint (trailer / update) must be in the log.
         findings.filter { it.doc == null || !githubActions }.forEach { err.println("OKF IMPACT WARNING: $it") }
@@ -275,7 +275,7 @@ class OkfCli(
             // A report that cannot be written is reported, but the setup error decides the exit code.
             args.report?.let { report ->
                 try {
-                    writeReport(report, OkfXcheck.report(config.repo, e.findings, emptyList(), "okfXcheck: setup failed — no check ran."))
+                    writeReport(report, OkfXcheck.report(config.repo, e.findings, emptyList(), "okf xcheck: setup failed — no check ran."))
                 } catch (reportError: OkfException) {
                     err.println("okf ${Command.XCHECK.cliName}: ${reportError.message}")
                 }
@@ -319,7 +319,7 @@ class OkfCli(
 
     /** The impact check cannot run (no base / merge-base): a failure under `--impact-strict`, else a skipped-check warning. */
     private fun impactUnavailable(strict: Boolean, message: String): Int {
-        if (strict) throw Failure("okfImpact: $message")
+        if (strict) throw Failure("okf impact: $message")
         err.println("OKF IMPACT WARNING: $message — impact check skipped.")
         if (githubActions) out.println(OkfGithubActions.annotation("warning", IMPACT_TITLE, message))
         return EXIT_OK

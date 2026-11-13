@@ -44,6 +44,8 @@ java -jar build/libs/okf-cli-<version>-all.jar version
   git state and clock (`stale_after`), the findings, exit codes and generated indexes stay identical. New
   behaviour arrives only behind new optional keys; bug fixes are listed in `CHANGELOG.md`. Pre-releases are
   exempt.
+- Message text: what the tool writes itself is covered; text passed through from the YAML parser, git or the
+  operating system, lists of allowed values (they grow) and the usage text are not. Details in `docs/reference.md`.
 - The file name `okf.yaml` and the keys `repo`, `hub_repo`, `satellites` never change (tooling built around
   `okf.yaml` may rely on them).
 - Federation rule: a repo checked by a hub's `okf xcheck` may use a new key only once the hub's tool version

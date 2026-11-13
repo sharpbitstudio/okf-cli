@@ -43,6 +43,7 @@ object OkfChecker {
         "Resolved" to "stable",
         "Superseded" to "deprecated",
         "Deprecated" to "deprecated",
+        "Rejected" to "deprecated",
     )
     /** ADR statuses on which `code_paths` is mandatory once [check] runs with `codePathsRequired`. */
     private val CODE_PATHS_ADR_STATUSES = setOf("Accepted", "Resolved")
@@ -281,7 +282,7 @@ object OkfChecker {
 
     private fun checkAdr(root: File, file: File, text: String, fm: Frontmatter.Present, status: String?): List<String> = buildList {
         if (fm.string("title") == null) add("ADR requires a non-empty `title`")
-        if (fm.string("description") == null) add("ADR requires a non-empty `description` („kada čitati\")")
+        if (fm.string("description") == null) add("ADR requires a non-empty `description` (\"when to read\")")
         addAll(checkAdrTags(fm.data["tags"]))
 
         val adrStatus = fm.string("adr_status")

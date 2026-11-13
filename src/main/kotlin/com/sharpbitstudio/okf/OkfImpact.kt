@@ -33,7 +33,7 @@ data class ImpactResult(
     val findings: List<ImpactFinding>,
     /** Documents that take part: non-empty `code_paths`, not deprecated. */
     val documents: Int,
-    /** Documents with `code_paths` skipped because their `status` is `deprecated` (Superseded/Deprecated ADRs). */
+    /** Documents with `code_paths` skipped because their `status` is `deprecated` (Superseded, Deprecated and Rejected ADRs). */
     val deprecatedSkipped: Int,
     /** Changed files outside the docs bundle, sorted. */
     val changedCode: List<String>,

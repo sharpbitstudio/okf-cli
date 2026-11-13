@@ -116,7 +116,7 @@ class LegacyDefaultsExplicitTest {
                 0,
                 "OKF INFO: $unmigrated files not yet migrated (no frontmatter); --strict makes them failures.\n" +
                     "OKF INFO: 8 Accepted/Resolved ADRs / Feature Records have no `code_paths`; --code-paths-required makes them failures.\n" +
-                    "okfCheck OK: 11 documents with frontmatter validated, 0 code references resolved.\n",
+                    "okf check OK: 11 documents with frontmatter validated, 0 code references resolved.\n",
                 "",
             ),
             check,

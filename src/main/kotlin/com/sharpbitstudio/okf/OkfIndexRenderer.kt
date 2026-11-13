@@ -33,6 +33,7 @@ object OkfIndexRenderer {
         "Resolved" to "Resolved",
         "Superseded" to "Superseded / Deprecated",
         "Deprecated" to "Superseded / Deprecated",
+        "Rejected" to "Rejected",
     )
 
     /**

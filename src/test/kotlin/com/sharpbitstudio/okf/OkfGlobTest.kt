@@ -127,4 +127,13 @@ class OkfGlobTest {
         }
         assertEquals("a/**", OkfGlob.compile("a/**").toString())
     }
+
+    @Test
+    fun `a reversed range in a character class is rejected with one line of the tool's own text`() {
+        val reason = "a `[...]` character class has a range whose start comes after its end (e.g. `[z-a]`)"
+        for (glob in listOf("src/[z-a].kt", "src/[a--].kt", "src/{x,[z-a]}.kt")) {
+            assertEquals(reason, assertThrows<IllegalArgumentException>(glob) { OkfGlob.compile(glob) }.message, glob)
+        }
+        assertTrue(OkfGlob.compile("src/[--a].kt").matches("src/-.kt"))
+    }
 }

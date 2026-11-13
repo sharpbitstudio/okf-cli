@@ -22,6 +22,30 @@ committed indexes are stale. Run the index command once, or set `index_language:
   `adr/README.md` only when that file exists; `always` renders the link unconditionally, as before. Kotlin API:
   `OkfIndexRenderer.renderAdrIndex` takes the setting as a parameter, and `OkfConfig` gains a property for it (as
   for each new key).
+- ADR status `Rejected` (`status: deprecated`), listed in its own section of the ADR index after
+  "Superseded / Deprecated"; messages that list the allowed `adr_status` values name it.
+- `okf.yaml` errors: `schema_version` is checked before unknown keys.
+- `okf.yaml`: a date-like value (`2026-01-01`) is read as the text written, as in frontmatter; an error message
+  echoes it as written, and a value that was rejected only because it was read as a date is now accepted.
+- Message texts, changed once before 1.0.0:
+  - `okfCheck OK: …` → `okf check OK: …`
+  - `okfCheck found N problem(s):` → `okf check found N problem(s):`
+  - `okfImpact skipped: no base to compare against …` → `okf impact skipped: no base to compare against …`
+  - `okfImpact: nothing changed since …` → `okf impact: nothing changed since …`
+  - `okfImpact: 0 documents with code_paths — …` → `okf impact: 0 documents with code_paths — …`
+  - `okfImpact: N changed files outside …` → `okf impact: N changed files outside …`
+  - `okfImpact found N problem(s):` → `okf impact found N problem(s):`
+  - `okfImpact: <reason>` (no base or no merge-base, under `--impact-strict`) → `okf impact: <reason>`
+  - `okfXcheck OK: …` → `okf xcheck OK: …`
+  - `okfXcheck: …; N problem(s), M warning(s).` → `okf xcheck: …; N problem(s), M warning(s).`
+  - `okfXcheck: setup failed — no check ran.` (footer of the `xcheck --report` file) →
+    `okf xcheck: setup failed — no check ran.`
+  - ``ADR requires a non-empty `description` („kada čitati")`` →
+    ``ADR requires a non-empty `description` ("when to read")``
+  - `cannot run git (required by okf index / check / impact): …` → `cannot run git (okf needs git on the PATH): …`
+  - `code_paths[i] '<glob>' is not a valid glob: Illegal character range near index …` (several lines) →
+    ``code_paths[i] '<glob>' is not a valid glob: a `[...]` character class has a range whose start comes after its end (e.g. `[z-a]`)``
+- The compatibility contract now says what it covers for message text (`docs/reference.md`, "Compatibility").
 
 ## 1.0.0-alpha.1 — 2026-11-12
 

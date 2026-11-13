@@ -85,7 +85,7 @@ class OkfCodePathsTest {
     }
 
     @Test
-    fun `okfCheck validates code_paths against the repo and requires it only when asked`(@TempDir root: File) {
+    fun `okf check validates code_paths against the repo and requires it only when asked`(@TempDir root: File) {
         val bundle = root.resolve("docs").apply { mkdirs() }
         bundle.resolve("index.md").writeText("---\nokf_version: \"0.2\"\n---\n# Docs\n")
         bundle.resolve("adr").mkdirs()

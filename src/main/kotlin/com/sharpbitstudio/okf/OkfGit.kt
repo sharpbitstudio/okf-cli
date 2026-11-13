@@ -119,7 +119,7 @@ object OkfGit {
                 builder.environment().putAll(env)
                 builder.start()
             } catch (e: IOException) {
-                throw OkfException("cannot run git (required by okf index / check / impact): ${e.message}")
+                throw OkfException("cannot run git (okf needs git on the PATH): ${e.message}")
             }
             process.outputStream.use { stdin -> input?.let { stdin.write(it.toByteArray(Charsets.UTF_8)) } }
             val exit = process.waitFor()
