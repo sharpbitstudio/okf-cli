@@ -55,7 +55,7 @@ class OkfXcheckMessagesTest {
         val run = xcheck()
         assertEquals(0, run.code, run.toString())
         assertEquals(
-            "okfXcheck OK: 3 repos checked, 4 cross-repo references resolved, 1 references to non-federated repos not checked, " +
+            "okf xcheck OK: 3 repos checked, 4 cross-repo references resolved, 1 references to non-federated repos not checked, " +
                 "2 Satellite Notes linked to 1 Feature Records.\n",
             run.out,
             "OkfXcheck#13",
@@ -110,7 +110,7 @@ class OkfXcheckMessagesTest {
         val drift = "hub-repo/docs/features/example.md:1: hub record docs/features/example.md is 15 days older than " +
             "sat-a/docs/example/NOTE.md — distill the satellite changes into the record"
         val problems = refs + listOf(badHub, notRecord, noHub, unresolved, untyped, noNote, notSatellite, notListed, indexUrl)
-        val summary = "okfXcheck: 3 repos checked, 5 cross-repo references checked (3 broken), 1 references to non-federated repos not checked, " +
+        val summary = "okf xcheck: 3 repos checked, 5 cross-repo references checked (3 broken), 1 references to non-federated repos not checked, " +
             "3 Satellite Notes linked to 2 Feature Records; 12 problem(s), 1 warning(s)."
         val block = "okf xcheck found 12 problem(s):\n" + problems.joinToString("\n") { "  - $it" }
         val errLines = run.err.lines()
@@ -177,7 +177,7 @@ class OkfXcheckMessagesTest {
             { assertEquals(drift, run.err.trim().removePrefix("OKF XCHECK WARNING: "), "OkfXcheck#30") },
             {
                 assertEquals(
-                    "okfXcheck OK: 3 repos checked, 4 cross-repo references resolved, 1 references to non-federated repos not checked, " +
+                    "okf xcheck OK: 3 repos checked, 4 cross-repo references resolved, 1 references to non-federated repos not checked, " +
                         "2 Satellite Notes linked to 1 Feature Records; 1 warning(s).\n",
                     run.out,
                     "OkfXcheck#12",
@@ -205,7 +205,7 @@ class OkfXcheckMessagesTest {
                     "# okf xcheck: 2 problem(s), 0 warning(s)\n\n" +
                         "Cross-repo check of the OKF federation of `hub-repo` (hub + `satellites` in its okf.yaml).\n\n" +
                         "## Setup\n\n- $hubMismatch\n- $missing\n\n" +
-                        "---\n\nokfXcheck: setup failed — no check ran.\n",
+                        "---\n\nokf xcheck: setup failed — no check ran.\n",
                     text,
                     "OkfCli#35",
                 )

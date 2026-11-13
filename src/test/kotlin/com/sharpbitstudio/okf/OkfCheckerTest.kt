@@ -87,6 +87,38 @@ class OkfCheckerTest {
     }
 
     @Test
+    fun `Rejected ADR is deprecated and needs no code_paths`() {
+        bundle("adr/ADR-001-test.md" to adr(changes = arrayOf("status" to "deprecated", "adr_status" to "Rejected")))
+        val result = OkfChecker.check(root, TestConfigs.SR, strict = true, now = NOW, codePathsRequired = true)
+        assertEquals(emptyList<String>(), result.problems)
+        assertEquals(emptyList<String>(), result.codePathsMissing)
+        assertEquals(1, result.validated)
+    }
+
+    @Test
+    fun `Rejected ADR with status stable is inconsistent`() {
+        bundle("adr/ADR-001-test.md" to adr(changes = arrayOf("adr_status" to "Rejected")))
+        assertEquals(
+            listOf("adr/ADR-001-test.md: status 'stable' is inconsistent with adr_status 'Rejected' (expected status: deprecated)"),
+            problems(),
+        )
+    }
+
+    @Test
+    fun `superseded_by is rejected on a Rejected ADR`() {
+        bundle(
+            "adr/ADR-001-test.md" to adr(
+                changes = arrayOf("status" to "deprecated", "adr_status" to "Rejected", "superseded_by" to "./ADR-002-new.md"),
+            ),
+            "adr/ADR-002-new.md" to adr(),
+        )
+        assertEquals(
+            listOf("adr/ADR-001-test.md: superseded_by is only allowed with adr_status Superseded (got adr_status 'Rejected')"),
+            problems(),
+        )
+    }
+
+    @Test
     fun `amendment marker without amended entry is reported`() {
         bundle("adr/ADR-001-test.md" to adr(body = "# ADR\n\n**Update 2026-07-05:** changed.\n"))
         assertProblem(problems(), "body has an amendment marker dated 2026-07-05 (e.g. `**Update 2026-07-05:**`) but `amended` does not list 2026-07-05")

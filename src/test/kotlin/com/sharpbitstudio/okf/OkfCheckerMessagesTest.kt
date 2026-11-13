@@ -12,8 +12,8 @@ import java.time.Instant
  * ([OkfFrontmatter]), the `code_paths` findings ([OkfCodePaths]) and the glob diagnostics they carry ([OkfGlob]).
  * Case labels (`<SourceFile>#<n>`) are stable names assigned once to each message template; they are not line
  * numbers. A suffix `F` or `P` separates two variants of one template: the tool's own full text (`F`) and the variant
- * ending in passed-through text, asserted up to the tool's frame (`P`). Text passed through from the YAML parser or the
- * regex engine is asserted only up to the tool's own frame.
+ * ending in passed-through text, asserted up to the tool's frame (`P`). Text passed through from the YAML parser is
+ * asserted only up to the tool's own frame.
  */
 class OkfCheckerMessagesTest {
     @TempDir
@@ -158,16 +158,16 @@ class OkfCheckerMessagesTest {
         val problems = check().problems
         val title = "$ADR: ADR requires a non-empty `title`"
         assertEquals(title, pick(problems, title), "OkfChecker#27")
-        val description = "$ADR: ADR requires a non-empty `description` („kada čitati\")"
+        val description = "$ADR: ADR requires a non-empty `description` (\"when to read\")"
         assertEquals(description, pick(problems, description), "OkfChecker#28")
-        val adrStatus = "$ADR: ADR requires a non-empty `adr_status` (one of [Proposed, Accepted, Resolved, Superseded, Deprecated])"
+        val adrStatus = "$ADR: ADR requires a non-empty `adr_status` (one of [Proposed, Accepted, Resolved, Superseded, Deprecated, Rejected])"
         assertEquals(adrStatus, pick(problems, adrStatus), "OkfChecker#29")
     }
 
     @Test
     fun `adr_status and status`() {
         bundle(ADR to adr(changes = arrayOf("adr_status" to "Bogus")))
-        val unknown = "$ADR: adr_status 'Bogus' must be one of [Proposed, Accepted, Resolved, Superseded, Deprecated]"
+        val unknown = "$ADR: adr_status 'Bogus' must be one of [Proposed, Accepted, Resolved, Superseded, Deprecated, Rejected]"
         assertEquals(unknown, pick(check().problems, unknown), "OkfChecker#30")
 
         bundle(ADR to adr(changes = arrayOf("status" to null)))
@@ -427,9 +427,11 @@ class OkfCheckerMessagesTest {
         val own = "guide.md: code_paths[0] 'src/' is not a valid glob: globs match files — use `dir/**`"
         assertEquals(own, pick(check().problems, own), "OkfCodePaths#10F")
 
+        // Once regex-engine text (hence `P`); since the message cleanup the tool's own full text. Labels are assigned once.
         bundle("guide.md" to guide("code_paths: [\"src/[z-a].kt\"]"))
-        val regexEngine = "guide.md: code_paths[0] 'src/[z-a].kt' is not a valid glob: "
-        assertEquals(regexEngine, frame(check().problems, regexEngine), "OkfCodePaths#10P")
+        val range = "guide.md: code_paths[0] 'src/[z-a].kt' is not a valid glob: " +
+            "a `[...]` character class has a range whose start comes after its end (e.g. `[z-a]`)"
+        assertEquals(range, pick(check().problems, range), "OkfCodePaths#10P")
     }
 
     @Test

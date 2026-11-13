@@ -72,9 +72,9 @@ data class XcheckResult(
         val counts = "$repos repos checked, $refs, $refsUnchecked references to non-federated repos not checked, " +
             "$notesLinked Satellite Notes linked to $recordsLinked Feature Records"
         return when {
-            problems.isNotEmpty() -> "okfXcheck: $counts; ${problems.size} problem(s), ${warnings.size} warning(s)."
-            warnings.isNotEmpty() -> "okfXcheck OK: $counts; ${warnings.size} warning(s)."
-            else -> "okfXcheck OK: $counts."
+            problems.isNotEmpty() -> "okf xcheck: $counts; ${problems.size} problem(s), ${warnings.size} warning(s)."
+            warnings.isNotEmpty() -> "okf xcheck OK: $counts; ${warnings.size} warning(s)."
+            else -> "okf xcheck OK: $counts."
         }
     }
 }

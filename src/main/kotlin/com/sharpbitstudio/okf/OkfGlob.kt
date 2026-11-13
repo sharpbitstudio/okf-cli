@@ -1,5 +1,7 @@
 package com.sharpbitstudio.okf
 
+import java.util.regex.PatternSyntaxException
+
 /**
  * A repo-root path glob (`code_paths`, [OkfCodePaths]) compiled to a [Regex] over `/`-separated
  * repo-relative paths — no `java.nio` `PathMatcher`, so matching is identical on every platform.
@@ -22,6 +24,8 @@ class OkfGlob private constructor(val pattern: String, private val regex: Regex)
 
         private const val REGEX_META ="""\.^$|()[]{}+*?"""
 
+        private const val RANGE_OUT_OF_ORDER = "a `[...]` character class has a range whose start comes after its end (e.g. `[z-a]`)"
+
         /** Compiles [glob]; throws [IllegalArgumentException] whose message says what is wrong with it. */
         fun compile(glob: String): OkfGlob {
             require(glob.isNotEmpty()) { "empty glob" }
@@ -37,7 +41,14 @@ class OkfGlob private constructor(val pattern: String, private val regex: Regex)
                     throw IllegalArgumentException("${e.message} in alternative '$alternative'", e)
                 }
             }
-            return OkfGlob(glob, Regex(regex))
+            // [translate] escapes every regex metacharacter except `-` inside a `[...]` class, so the one
+            // pattern the regex engine can still reject is a range whose start comes after its end.
+            val compiled = try {
+                Regex(regex)
+            } catch (_: PatternSyntaxException) {
+                throw IllegalArgumentException(RANGE_OUT_OF_ORDER)
+            }
+            return OkfGlob(glob, compiled)
         }
 
         /** Regex for one brace-free alternative. */

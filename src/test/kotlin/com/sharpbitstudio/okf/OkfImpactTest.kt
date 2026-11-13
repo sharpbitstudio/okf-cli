@@ -296,6 +296,15 @@ class OkfImpactTest {
     }
 
     @Test
+    fun `a Rejected ADR with code_paths is skipped as deprecated`() {
+        val rejected = doc("adr/ADR-001-declined.md", "type: ADR\nstatus: deprecated\nadr_status: Rejected\ncode_paths: [\"src/**\"]")
+        val result = OkfImpact.evaluate(listOf(rejected), "docs", listOf("src/App.kt"), emptyList(), emptySet(), { emptyList() }, { a, b -> a == b })
+        assertEquals(emptyList<ImpactEntry>(), result.entries)
+        assertEquals(0, result.documents)
+        assertEquals(1, result.deprecatedSkipped)
+    }
+
+    @Test
     fun `changes under docs are not code, but a doc change marks its doc updated`() {
         val result = evaluate(listOf("docs/adr/ADR-026-expiry.md", "docs/RUNTIME.md"))
         assertEquals(emptyList<String>(), result.changedCode)

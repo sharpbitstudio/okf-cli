@@ -82,7 +82,7 @@ class OkfXcheckCliTest {
         assertEquals(0, run.code, run.toString())
         assertEquals("", run.err)
         assertEquals(
-            "okfXcheck OK: 3 repos checked, 4 cross-repo references resolved, 1 references to non-federated repos not checked, " +
+            "okf xcheck OK: 3 repos checked, 4 cross-repo references resolved, 1 references to non-federated repos not checked, " +
                 "2 Satellite Notes linked to 1 Feature Records.",
             run.out.trim(),
         )
@@ -138,7 +138,7 @@ class OkfXcheckCliTest {
             run.err.trim().lines(),
         )
         assertEquals(
-            "okfXcheck: 3 repos checked, 5 cross-repo references checked (3 broken), 1 references to non-federated repos not checked, " +
+            "okf xcheck: 3 repos checked, 5 cross-repo references checked (3 broken), 1 references to non-federated repos not checked, " +
                 "3 Satellite Notes linked to 2 Feature Records; 9 problem(s), 0 warning(s).",
             run.out.trim(),
         )
@@ -172,7 +172,7 @@ class OkfXcheckCliTest {
                 "sat-a/docs/invite/NOTE.md — distill the satellite changes into the record",
             run.err.trim(),
         )
-        assertTrue(run.out.trim().startsWith("okfXcheck OK: 3 repos checked, "), run.out)
+        assertTrue(run.out.trim().startsWith("okf xcheck OK: 3 repos checked, "), run.out)
         assertTrue(run.out.trim().endsWith("; 1 warning(s)."), run.out)
         val text = report.readText()
         assertTrue(text.startsWith("# okf xcheck: 0 problem(s), 1 warning(s)\n"), text)
@@ -266,7 +266,7 @@ class OkfXcheckCliTest {
         val failing = run("xcheck", "--repo=${hub.path}", "--workspace=${ws.path}", "--report=${dirReport.path}")
         assertEquals(1, failing.code, failing.toString())
         assertTrue(failing.err.trim().endsWith("okf xcheck: cannot write report ${dirReport.path}: it is a directory"), failing.err)
-        assertTrue(failing.out.startsWith("okfXcheck: "), failing.out)
+        assertTrue(failing.out.startsWith("okf xcheck: "), failing.out)
 
         write(satA, "docs/invite/NOTE.md", note())
         val clean = run("xcheck", "--repo=${hub.path}", "--workspace=${ws.path}", "--report=${dirReport.path}")

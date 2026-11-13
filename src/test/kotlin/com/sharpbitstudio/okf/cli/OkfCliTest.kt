@@ -64,7 +64,7 @@ class OkfCliTest {
         run("index", "--repo=${repo.path}")
         val run = run("check", "--repo=${repo.path}", "--strict", "--refs-strict", "--code-paths-required")
         assertEquals(0, run.code, run.toString())
-        assertEquals("okfCheck OK: 1 documents with frontmatter validated, 2 code references resolved.", run.out.trim())
+        assertEquals("okf check OK: 1 documents with frontmatter validated, 2 code references resolved.", run.out.trim())
         assertEquals("", run.err)
     }
 
@@ -80,14 +80,14 @@ class OkfCliTest {
         assertTrue("::warning file=docs/guide.md,line=6,title=OKF ref::`app/Gone.kt`: file not found" in lenient.out, lenient.out)
         assertTrue("OKF INFO: 1 files not yet migrated (no frontmatter); --strict makes them failures." in lenient.out, lenient.out)
         assertTrue(
-            "okfCheck OK: 2 documents with frontmatter validated, 3 code references checked (1 warnings; --refs-strict fails on them)." in lenient.out,
+            "okf check OK: 2 documents with frontmatter validated, 3 code references checked (1 warnings; --refs-strict fails on them)." in lenient.out,
             lenient.out,
         )
 
         val strict = run("check", "--repo=${repo.path}", "--strict", "--refs-strict=true")
         assertEquals(1, strict.code, strict.toString())
         assertEquals(
-            "okfCheck found 2 problem(s):\n  - notes.md: no frontmatter (strict mode: every non-reserved .md must be migrated)\n" +
+            "okf check found 2 problem(s):\n  - notes.md: no frontmatter (strict mode: every non-reserved .md must be migrated)\n" +
                 "  - guide.md:6: `app/Gone.kt`: file not found in the repo",
             strict.err.trim().lines().take(3).joinToString("\n").substringBefore(" — fix the path"),
         )
@@ -105,7 +105,7 @@ class OkfCliTest {
         commit("base")
         val skipped = run("impact", "--repo=${repo.path}", "--base=", "--impact-strict")
         assertEquals(0, skipped.code, skipped.toString())
-        assertEquals("okfImpact skipped: no base to compare against (--base='').", skipped.out.trim())
+        assertEquals("okf impact skipped: no base to compare against (--base='').", skipped.out.trim())
 
         val lenient = run("impact", "--repo=${repo.path}", "--base=nope")
         assertEquals(0, lenient.code, lenient.toString())
@@ -113,7 +113,7 @@ class OkfCliTest {
 
         val strict = run("impact", "--repo=${repo.path}", "--base=nope", "--impact-strict")
         assertEquals(1, strict.code, strict.toString())
-        assertEquals("okfImpact: base 'nope' not found — fetch it or pass --base=<ref>", strict.err.trim())
+        assertEquals("okf impact: base 'nope' not found — fetch it or pass --base=<ref>", strict.err.trim())
     }
 
     @Test
@@ -142,7 +142,7 @@ class OkfCliTest {
 
         val skipped = run("impact", "--repo=${repo.path}", "--base=", "--impact-strict")
         assertEquals(0, skipped.code, skipped.toString())
-        assertEquals("okfImpact skipped: no base to compare against (--base='').", skipped.out.trim())
+        assertEquals("okf impact skipped: no base to compare against (--base='').", skipped.out.trim())
     }
 
     @Test
@@ -158,7 +158,7 @@ class OkfCliTest {
 
         val strict = run("impact", "--repo=${repo.path}", "--impact-strict")
         assertEquals(1, strict.code, strict.toString())
-        assertEquals("okfImpact: base 'origin/nope' / 'nope' not found — fetch it or pass --base=<ref>", strict.err.trim())
+        assertEquals("okf impact: base 'origin/nope' / 'nope' not found — fetch it or pass --base=<ref>", strict.err.trim())
     }
 
     @Test
@@ -174,14 +174,14 @@ class OkfCliTest {
         assertTrue(lenient.err.startsWith("[NOT UPDATED] docs/adr/ADR-001-app.md <- src/main/kotlin/app/App.kt"), lenient.err)
         assertTrue("OKF IMPACT WARNING: docs/adr/ADR-001-app.md: not updated although code it covers changed" in lenient.err, lenient.err)
         assertTrue("OKF IMPACT: 1 finding(s); --impact-strict fails on them." in lenient.err, lenient.err)
-        assertTrue(lenient.out.trim().startsWith("okfImpact: 1 changed files outside docs/ since merge-base "), lenient.out)
+        assertTrue(lenient.out.trim().startsWith("okf impact: 1 changed files outside docs/ since merge-base "), lenient.out)
         assertTrue(lenient.out.trim().endsWith("with origin/main; 1 documents with code_paths, 1 impacted (0 updated, 0 acknowledged, 1 NOT UPDATED).") ||
             lenient.out.trim().endsWith("with main; 1 documents with code_paths, 1 impacted (0 updated, 0 acknowledged, 1 NOT UPDATED)."), lenient.out)
 
         val strict = run("impact", "--repo=${repo.path}", "--base=main", "--impact-strict", githubActions = true)
         assertEquals(1, strict.code, strict.toString())
         assertTrue("::error file=docs/adr/ADR-001-app.md,line=1,title=OKF docs impact::not updated" in strict.out, strict.out)
-        assertTrue(strict.err.contains("okfImpact found 1 problem(s):\n  - docs/adr/ADR-001-app.md: not updated"), strict.err)
+        assertTrue(strict.err.contains("okf impact found 1 problem(s):\n  - docs/adr/ADR-001-app.md: not updated"), strict.err)
 
         write("src/main/kotlin/app/App.kt", "package app\n\nfun x() = 2\n")
         git("add", "-A")
@@ -216,6 +216,33 @@ class OkfCliTest {
         assertTrue(usage.err.startsWith("okf: --strict must be 'true' or 'false', got 'yes'"), usage.err)
         assertTrue("Usage: okf <command>" in usage.err, usage.err)
         assertEquals(2, run().code)
+    }
+
+    @Test
+    fun `an unsupported schema_version is reported before unknown keys`() {
+        repo.resolve("okf.yaml").writeText("schema_version: 2\nrepo: test-repo\nbogus: 1\n")
+        val run = run("check", "--repo=${repo.path}")
+        assertEquals(2, run.code, run.toString())
+        assertEquals("okf check: okf.yaml: unsupported schema_version 2 — this okf-cli supports 1\n", run.err)
+        assertEquals("", run.out)
+    }
+
+    @Test
+    fun `index and check accept a Rejected ADR`() {
+        write(
+            "docs/adr/ADR-002-declined.md",
+            "---\ntype: ADR\ntitle: \"Declined\"\ndescription: \"When\"\ntags: [app]\nstatus: deprecated\nadr_status: Rejected\n" +
+                "adr_date: 2026-07-01\n---\n# ADR\n",
+        )
+        val index = run("index", "--repo=${repo.path}")
+        assertEquals(0, index.code, index.toString())
+        assertTrue(
+            "# Rejected\n\n* [ADR-002 — Declined](./ADR-002-declined.md) - When `tags: app`\n" in repo.resolve("docs/adr/index.md").readText(),
+            repo.resolve("docs/adr/index.md").readText(),
+        )
+        val check = run("check", "--repo=${repo.path}", "--strict", "--code-paths-required")
+        assertEquals(0, check.code, check.toString())
+        assertEquals("okf check OK: 2 documents with frontmatter validated, 2 code references resolved.\n", check.out)
     }
 
     @Test
@@ -275,7 +302,7 @@ class OkfCliTest {
 
         val check = run("check", "--repo=${repo.path}", "--strict", "--refs-strict", "--code-paths-required")
         assertEquals(0, check.code, check.toString())
-        assertEquals("okfCheck OK: 1 documents with frontmatter validated, 2 code references resolved.", check.out.trim())
+        assertEquals("okf check OK: 1 documents with frontmatter validated, 2 code references resolved.", check.out.trim())
     }
 
     @Test
@@ -292,7 +319,7 @@ class OkfCliTest {
         assertEquals(
             listOf(
                 "OKF INFO: 2 Accepted/Resolved ADRs / Feature Records have no `code_paths`; --code-paths-required makes them failures.",
-                "okfCheck OK: 3 documents with frontmatter validated, 2 code references resolved.",
+                "okf check OK: 3 documents with frontmatter validated, 2 code references resolved.",
             ),
             check.out.trim().lines(),
         )
@@ -332,7 +359,7 @@ class OkfCliTest {
         assertEquals(1, run.code, run.toString())
         assertEquals(
             listOf(
-                "okfCheck found 4 problem(s):",
+                "okf check found 4 problem(s):",
                 "  - a.md: Satellite Note requires hub_repo in okf.yaml (the repository that holds its Feature Record)",
                 "  - b.md: hub 'features/Invite_Respond' must be `features/<slug>` (slug: lowercase letters and digits, words joined by single hyphens)",
                 "  - b.md: Satellite Note requires hub_repo in okf.yaml (the repository that holds its Feature Record)",
@@ -461,7 +488,7 @@ class OkfCliTest {
         assertEquals(1_000_000_000_000, rootIndex.lastModified())
         val check = run("check", "--repo=${repo.path}", "--strict", "--refs-strict", "--code-paths-required")
         assertEquals(0, check.code, check.toString())
-        assertEquals("okfCheck OK: 1 documents with frontmatter validated, 2 code references resolved.", check.out.trim())
+        assertEquals("okf check OK: 1 documents with frontmatter validated, 2 code references resolved.", check.out.trim())
     }
 
     @Test
@@ -500,7 +527,7 @@ class OkfCliTest {
         val edited = run("check", "--repo=${repo.path}")
         assertEquals(1, edited.code, edited.toString())
         assertEquals(
-            listOf("okfCheck found 1 problem(s):", "  - index.md: Repos section out of date or edited by hand — run tool/run-okf.sh index"),
+            listOf("okf check found 1 problem(s):", "  - index.md: Repos section out of date or edited by hand — run tool/run-okf.sh index"),
             edited.err.trim().lines(),
         )
 
@@ -518,7 +545,7 @@ class OkfCliTest {
         assertEquals(1, check.code, check.toString())
         assertEquals(
             listOf(
-                "okfCheck found 1 problem(s):",
+                "okf check found 1 problem(s):",
                 "  - guide.md: frontmatter YAML does not parse: value does not match its explicit tag (For input string: \"x\")",
             ),
             check.err.trim().lines(),

@@ -242,7 +242,7 @@ class OkfCliMessagesTest {
     @Test
     fun `git cannot be started`() {
         val e = assertThrows<OkfException> { OkfGit.workTreeRoot(home.resolve("nope")) }
-        val frame = "cannot run git (required by okf index / check / impact): "
+        val frame = "cannot run git (okf needs git on the PATH): "
         assertEquals(frame, e.message.orEmpty().take(frame.length), "OkfGit#2")
     }
 
@@ -271,7 +271,7 @@ class OkfCliMessagesTest {
         run("index", "--repo=${repo.path}")
         val run = run("check", "--repo=${repo.path}")
         assertEquals(0, run.code, "OkfCli#19")
-        assertEquals("okfCheck OK: 1 documents with frontmatter validated, 1 code references resolved.\n", run.out, "OkfCli#19")
+        assertEquals("okf check OK: 1 documents with frontmatter validated, 1 code references resolved.\n", run.out, "OkfCli#19")
     }
 
     @Test
@@ -305,7 +305,7 @@ class OkfCliMessagesTest {
             },
             {
                 assertEquals(
-                    "okfCheck OK: 3 documents with frontmatter validated, 3 code references checked (1 warnings; --refs-strict fails on them).",
+                    "okf check OK: 3 documents with frontmatter validated, 3 code references checked (1 warnings; --refs-strict fails on them).",
                     out[3],
                     "OkfCli#19",
                 )
@@ -321,7 +321,7 @@ class OkfCliMessagesTest {
         val run = run("check", "--repo=${repo.path}", "--strict", "--refs-strict")
         assertEquals(1, run.code, "OkfCli#16")
         assertEquals(
-            "okfCheck found 2 problem(s):\n" +
+            "okf check found 2 problem(s):\n" +
                 "  - notes.md: no frontmatter (strict mode: every non-reserved .md must be migrated)\n" +
                 "  - guide.md:6: `app/Gone.kt`: file not found in the repo — fix the path, write a sibling-repo path as `<repo>/<path>`, " +
                 "or opt the line out with `<!-- okf: ignore-refs -->`\n",
@@ -336,7 +336,7 @@ class OkfCliMessagesTest {
     fun `impact skipped without a base`() {
         val run = run("impact", "--repo=${repo.path}", "--base=")
         assertEquals(0, run.code, "OkfCli#20")
-        assertEquals("okfImpact skipped: no base to compare against (--base='').\n", run.out, "OkfCli#20")
+        assertEquals("okf impact skipped: no base to compare against (--base='').\n", run.out, "OkfCli#20")
     }
 
     @Test
@@ -369,7 +369,7 @@ class OkfCliMessagesTest {
 
         val strict = run("impact", "--repo=${repo.path}", "--base=nope", "--impact-strict")
         assertEquals(1, strict.code, "OkfCli#43")
-        assertEquals("okfImpact: base 'nope' not found — fetch it or pass --base=<ref>\n", strict.err, "OkfCli#43")
+        assertEquals("okf impact: base 'nope' not found — fetch it or pass --base=<ref>\n", strict.err, "OkfCli#43")
     }
 
     @Test
@@ -390,7 +390,7 @@ class OkfCliMessagesTest {
         run("index", "--repo=${repo.path}")
         commit("base")
         val run = run("impact", "--repo=${repo.path}", "--base=main")
-        assertEquals("okfImpact: nothing changed since merge-base ${sha7("main")} with main.\n", run.out, "OkfCli#24")
+        assertEquals("okf impact: nothing changed since merge-base ${sha7("main")} with main.\n", run.out, "OkfCli#24")
     }
 
     @Test
@@ -401,7 +401,7 @@ class OkfCliMessagesTest {
         write("src/main/kotlin/app/App.kt", "package app\n\nfun x() = 1\n")
         val run = run("impact", "--repo=${repo.path}", "--base=main")
         assertEquals(
-            "okfImpact: 0 documents with code_paths — nothing to match (1 changed files outside docs/ since merge-base ${sha7("main")} with main).\n",
+            "okf impact: 0 documents with code_paths — nothing to match (1 changed files outside docs/ since merge-base ${sha7("main")} with main).\n",
             run.out,
             "OkfCli#25",
         )
@@ -433,7 +433,7 @@ class OkfCliMessagesTest {
             { assertEquals("OKF IMPACT: 1 finding(s); --impact-strict fails on them.", lenient.err.lines()[2], "OkfCli#31") },
             {
                 assertEquals(
-                    "okfImpact: 1 changed files outside docs/ since merge-base $base with main; 1 documents with code_paths, " +
+                    "okf impact: 1 changed files outside docs/ since merge-base $base with main; 1 documents with code_paths, " +
                         "1 impacted (0 updated, 0 acknowledged, 1 NOT UPDATED).\n",
                     lenient.out,
                     "OkfCli#27",
@@ -456,7 +456,7 @@ class OkfCliMessagesTest {
             },
             {
                 assertEquals(
-                    "$entry\nokfImpact found 1 problem(s):\n  - docs/adr/ADR-001-example.md: $finding\n",
+                    "$entry\nokf impact found 1 problem(s):\n  - docs/adr/ADR-001-example.md: $finding\n",
                     strict.err,
                     "OkfCli#29",
                 )
@@ -468,7 +468,7 @@ class OkfCliMessagesTest {
         commit("deprecated ADR")
         val withDeprecated = run("impact", "--repo=${repo.path}", "--base=main")
         assertEquals(
-            "okfImpact: 1 changed files outside docs/ since merge-base $base with main; 1 documents with code_paths, " +
+            "okf impact: 1 changed files outside docs/ since merge-base $base with main; 1 documents with code_paths, " +
                 "1 impacted (0 updated, 0 acknowledged, 1 NOT UPDATED); 1 deprecated skipped.\n",
             withDeprecated.out,
             "OkfCli#27",

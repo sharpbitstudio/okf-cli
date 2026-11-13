@@ -368,6 +368,33 @@ class OkfConfigTest {
         assertEquals(hubOnly, configError("schema_version: 1\nrepo: r\ndrift_days: nope\n"))
     }
 
+    @Test
+    fun `schema_version is checked before unknown keys`() {
+        assertEquals(
+            "okf.yaml: unsupported schema_version 2 — this okf-cli supports 1",
+            configError("schema_version: 2\nrepo: r\nbogus: 1\n"),
+        )
+        assertEquals("okf.yaml: `schema_version` is required (supported: 1)", configError("repo: r\nbogus: 1\n"))
+        assertEquals(
+            "okf.yaml: `schema_version` must be an integer, got '1'",
+            configError("schema_version: \"1\"\nrepo: r\nbogus: 1\n"),
+        )
+        assertEquals(
+            "okf.yaml: unknown key(s) [bogus] — allowed: [adr_readme_link, base_ref, docs_root, drift_days, external_repos, extra_types, " +
+                "hub_repo, index_command, index_language, ref_extensions, repo, satellites, schema_version, source_roots]",
+            configError("schema_version: 1\nrepo: r\nbogus: 1\n"),
+        )
+    }
+
+    @Test
+    fun `a date-like value is read as the text written`() {
+        assertEquals("2026-01-01", OkfConfig.parse("schema_version: 1\nrepo: 2026-01-01\n").repo)
+        assertEquals(
+            "okf.yaml: `drift_days` must be an integer from 1 to 3650, got '2026-01-01'",
+            configError(HUB_HEAD + "drift_days: 2026-01-01\n"),
+        )
+    }
+
     private fun configError(yaml: String): String = assertThrows<OkfConfigException> { OkfConfig.parse(yaml) }.message!!
 
     private fun assertError(yaml: String, fragment: String) {

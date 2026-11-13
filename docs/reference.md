@@ -62,10 +62,79 @@ java -jar okf-cli-<version>-all.jar impact --base=origin/main --impact-strict
 java -jar okf-cli-<version>-all.jar xcheck --repo=<hub> --workspace=<dir> --report=<file>
 ```
 
+### Console lines
+
+A line that starts with `okf <command>` reports on that command; a line that starts with `OKF ` is a labelled
+notice. `N`, `<problem>` and the other placeholders stand for the variable parts; `(1 warnings)` and similar plurals
+are written as shown.
+
+Every command:
+
+- `okf: <usage error>` on stderr, followed by the usage text (exit `2`);
+- `okf <command>: <message>` on stderr for an `okf.yaml` or `--repo` error (exit `2`) and for an operation that
+  cannot complete (exit `1`), e.g. `okf index: adr/<file>: unknown or missing adr_status '<value>'`.
+
+`okf index` prints nothing when it succeeds.
+
+`okf check`:
+
+- `OKF WARNING: <warning>` on stderr, one per warning (e.g. a `stale_after` in the past, an over-broad
+  `code_paths` glob, and the code-reference findings without `--refs-strict`);
+- `OKF INFO: N files not yet migrated (no frontmatter); --strict makes them failures.` on stdout, without `--strict`;
+- ``OKF INFO: N <kinds> have no `code_paths`; --code-paths-required makes them failures.`` on stdout, without
+  `--code-paths-required`; `<kinds>` is `Accepted/Resolved ADRs / Feature Records`, `Satellite Notes`, or both
+  joined by ` / `;
+- on failure, one block on stderr (exit `1`): `okf check found N problem(s):`, then one line `  - <problem>` per
+  problem;
+- otherwise one summary line on stdout, without or with code-reference warnings:
+  - `okf check OK: N documents with frontmatter validated, M code references resolved.`
+  - `okf check OK: N documents with frontmatter validated, M code references checked (K warnings; --refs-strict fails on them).`
+- under GitHub Actions, each code-reference finding also as an annotation with the title `OKF ref` (`::warning`,
+  `::error` with `--refs-strict`).
+
+`okf impact`:
+
+- one line per impacted document: `[updated] <doc> <- <files>` and `[acknowledged: <sha7>] <doc> <- <files>` on
+  stdout, `[NOT UPDATED] <doc> <- <files>` on stderr; `<files>` lists at most three files, then `(+N more)`;
+- without `--impact-strict`: `OKF IMPACT WARNING: <finding>` on stderr (under GitHub Actions only for findings
+  without a document), then `OKF IMPACT: N finding(s); --impact-strict fails on them.`;
+- with `--impact-strict` and findings, one block on stderr (exit `1`): `okf impact found N problem(s):`, then one
+  line `  - <finding>` per finding, and no summary line;
+- otherwise one summary line on stdout, where `<against>` is `merge-base <sha7> with <base>`:
+  - `okf impact: nothing changed since <against>.`
+  - `okf impact: 0 documents with code_paths — nothing to match (N changed files outside <docs_root>/ since <against>).`
+  - `okf impact: N changed files outside <docs_root>/ since <against>; D documents with code_paths, I impacted (U updated, A acknowledged, X NOT UPDATED)`,
+    then `; S deprecated skipped.` when documents with `code_paths` were skipped as `deprecated`, `.` otherwise;
+- `okf impact skipped: no base to compare against (--base='<value>').` on stdout when `--base` is empty or an
+  all-zero SHA;
+- when the base or the merge-base cannot be found: `OKF IMPACT WARNING: <reason> — impact check skipped.` on
+  stderr, or with `--impact-strict` `okf impact: <reason>` (exit `1`);
+- under GitHub Actions, each finding also as an annotation with the title `OKF docs impact` (`::warning`, `::error`
+  with `--impact-strict`), and without `--impact-strict` a base or merge-base that cannot be found also as a
+  `::warning` annotation with that title.
+
+`okf xcheck` ([Cross-repo check](#cross-repo-check-xcheck)), where `<counts>` is
+`R repos checked, <refs>, U references to non-federated repos not checked, S Satellite Notes linked to F Feature Records`
+and `<refs>` is `C cross-repo references resolved`, or `C cross-repo references checked (B broken)` when a reference
+is broken:
+
+- a setup error (exit `2`): `okf xcheck: <repo>: <reason>` on stderr, or for several satellites
+  `okf xcheck: N setup problems:`, then one line `  - <repo>: <reason>` per satellite; no check runs and no summary
+  line is printed;
+- `OKF XCHECK WARNING: <finding>` on stderr, one per warning;
+- on failure, one block on stderr (exit `1`): `okf xcheck found N problem(s):`, then one line `  - <finding>` per
+  problem;
+- then one summary line on stdout:
+  - `okf xcheck OK: <counts>.`
+  - `okf xcheck OK: <counts>; M warning(s).`
+  - `okf xcheck: <counts>; N problem(s), M warning(s).`
+
 ## `okf.yaml` (schema v1)
 
 Every repo under OKF has an `okf.yaml` at its root. Parsing is strict: an unknown key, a wrong type, a
-missing file or an unsupported `schema_version` is an error (exit `2`).
+missing file or an unsupported `schema_version` is an error (exit `2`). `schema_version` is checked first, so a
+file written for a newer schema is reported as that and not as unknown keys. A date-like value (`2026-01-01`) is
+read as the text written, as in frontmatter.
 
 | Key | Required | Default | Meaning |
 |---|---|---|---|
@@ -80,7 +149,7 @@ missing file or an unsupported `schema_version` is an error (exit `2`).
 | `satellites` | no | `[]` | hub only (not allowed together with `hub_repo`): the satellite repositories, a list of mappings with exactly `repo` (a repository name from `external_repos`, not this repo, listed once; no `/`, `\`, `.` or `..`), `description` (one line) and `index` (an `https://` URL with a host, as `java.net.URI` parses it, of the satellite's bundle-root `index.md`; one line, no whitespace and none of `(`, `)`, `<`, `>`, since it becomes a Markdown link target). Order is kept. Turns on the "Repos" section of `<docs_root>/index.md` and `okf xcheck` |
 | `index_language` | no | `en` | language of the fixed text of the generated `<docs_root>/adr/index.md` and `<docs_root>/features/index.md` (`sr` or `en`, case-sensitive): the ADR index title and intro, the "not migrated" section and its entries, the amended suffix; the marker line, status headings, entry format and the Repos section are the same in both |
 | `adr_readme_link` | no | `auto` | whether the intro of the generated `<docs_root>/adr/index.md` ends with a link to `<docs_root>/adr/README.md` ("Conventions, template and lifecycle"): `auto` only when that file exists (the name is matched exactly), `always` unconditionally (case-sensitive: `always` or `auto`). With `auto`, adding or removing the file makes the index stale until `okf index` runs |
-| `base_ref` | no | `main` | the branch `okf impact` compares against when `--base` is absent: the merge-base with `origin/<base_ref>`, or with `<base_ref>` when that remote-tracking ref does not exist (resolved as `git rev-parse` resolves it, so a tag or a commit of that spelling also matches). A branch name without the remote: parts of ASCII letters, digits, `.`, `_` or `-` joined by `/`, each starting with a letter, digit or `_` and not ending with `.` or `.lock`, without `..`; not `HEAD` or a name without `/` ending in `_HEAD` (git reserves those, such as `FETCH_HEAD` and `ORIG_HEAD`), compared ignoring case; quote a name that YAML would read as a number, a boolean, a date or null |
+| `base_ref` | no | `main` | the branch `okf impact` compares against when `--base` is absent: the merge-base with `origin/<base_ref>`, or with `<base_ref>` when that remote-tracking ref does not exist (resolved as `git rev-parse` resolves it, so a tag or a commit of that spelling also matches). A branch name without the remote: parts of ASCII letters, digits, `.`, `_` or `-` joined by `/`, each starting with a letter, digit or `_` and not ending with `.` or `.lock`, without `..`; not `HEAD` or a name without `/` ending in `_HEAD` (git reserves those, such as `FETCH_HEAD` and `ORIG_HEAD`), compared ignoring case; quote a name that YAML would read as a number, a boolean or null |
 | `extra_types` | no | `[]` | document types added to the built-in ones ([Bundle rules](#bundle-rules)): a list of one-line names. An added type has no rules of its own (it is not an ADR, a Feature Record or a Satellite Note). A name equal to a built-in type, ignoring case, is an error; a repeated name counts once. The built-in types do not change within a major version, so an added name never collides later |
 | `drift_days` | no | `14` | hub only (an error in a repo without a non-empty `satellites`): after how many days, `1` to `3650`, `okf xcheck` reports drift between a Satellite Note and its hub record (check (d)). Write a plain decimal number, unquoted (YAML 1.1 reads forms such as a leading `0` as octal) |
 
@@ -120,6 +189,20 @@ summarised in the [README](../README.md)):
 - **Document types** (`type`): the built-in types `ADR`, `Feature Record`, `Plan`, `Guide`, `Risk Register`,
   `Convention`, `Product Spec`, `Satellite Note`, plus the names in `extra_types`. Only the built-in `ADR`,
   `Feature Record` and `Satellite Note` carry rules of their own.
+- **ADRs** (`type: ADR`, files named `adr/ADR-NNN-<slug>.md` with a three-digit number): an ADR needs a non-empty
+  `title` and `description`, `tags` as a non-empty YAML list of strings, and `adr_date` as a valid `YYYY-MM-DD` date;
+  `amended`, when present, lists the dates of later changes, strictly ascending and each after `adr_date`. It is kept
+  in sync both ways with the amendment markers in the body (such as `**Update YYYY-MM-DD:**`; fenced blocks and code
+  spans are not scanned): a listed date without a marker and a marker whose date is not listed are both problems,
+  and a marker dated the same day as `adr_date` is reported as one to drop, since same-day changes are part of the
+  original decision. `adr_status` is one of
+  `Proposed`, `Accepted`, `Resolved`, `Superseded`, `Deprecated`, `Rejected`, and `status` must be the matching
+  lifecycle value: `draft` for `Proposed`, `stable` for `Accepted` and `Resolved`, `deprecated` for `Superseded`,
+  `Deprecated` and `Rejected`. The generated ADR index groups the entries under the headings `Accepted`,
+  `Proposed`, `Resolved`, `Superseded / Deprecated` and `Rejected`, in that order, and leaves out empty ones.
+  `superseded_by` is required with `Superseded` and not allowed otherwise. `code_paths` is mandatory under
+  `--code-paths-required` only for `Accepted` and `Resolved`; `okf impact` skips documents whose `status` is
+  `deprecated`.
 - **`Satellite Note`**: a note in a sibling repo that belongs to a feature whose record lives in the hub.
   `hub: features/<slug>` is required (slug: lowercase letters and digits, words joined by single hyphens,
   e.g. `hub: features/checkout`) and names the hub's Feature Record in the `Docs-Impact:` ID form.
@@ -190,10 +273,11 @@ Findings are written as `<repo>/<repo-relative path>:<line>: <message>`; for (b)
 (shallow clone) is named by the repo alone. Warnings go to stderr as `OKF XCHECK WARNING: …`, failures as one block
 `okf xcheck found N problem(s):` on stderr, and a summary line on stdout: repos checked, cross-repo references
 resolved, references to non-federated repos not checked, and Satellite Notes linked to Feature Records
-(`okfXcheck OK: …` when nothing failed). No GitHub annotations are printed: the findings are in other repos.
+(`okf xcheck OK: …` when nothing failed). No GitHub annotations are printed: the findings are in other repos.
 
 With `--report=<file>`, a run with at least one failure or warning (setup errors included) writes a Markdown report
-there: the findings grouped by check, one bullet each, and the summary line as footer. A clean run writes nothing
+there: the findings grouped by check, one bullet each, and as footer the summary line, or after a setup error the
+fixed line `okf xcheck: setup failed — no check ran.` (no summary line exists then). A clean run writes nothing
 and deletes a report left at that path, so a CI step can test for the file (`[ -s <file> ]`) to open or update an
 issue, and close it when the run is clean. A report that cannot be written or deleted (e.g. the path is a directory)
 is reported as `okf xcheck: cannot write report …` / `cannot delete report …` and exits `1`, after the findings
@@ -248,6 +332,21 @@ With these task names, `index_command: ./gradlew okfIndex` names the task that r
   git state and clock (`stale_after`), the findings, exit codes and generated indexes stay identical. New
   behaviour arrives only behind new optional keys; bug fixes are listed in `CHANGELOG.md`. Pre-releases are
   exempt.
+- For message text, "identical" covers what the tool writes itself: every finding, the console lines (summary
+  lines, the `OKF …` info and warning lines, the `found N problem(s)` blocks), the `okf.yaml` and command-line
+  error messages (`okf <command>: …`, `okf: …`), the `::warning` / `::error` annotations with their titles, and
+  the `xcheck --report` Markdown. Three things are outside it:
+  - text passed through from elsewhere: the YAML parser's description of a syntax error (what follows
+    `does not parse:`) and the type name it reports in `must be a YAML mapping, got …`, git's own error output
+    (what follows `git <command> failed (exit N) in <dir>:`) and operating-system messages (a file that cannot be
+    read or written, a program that cannot be started). They can change with a dependency, git or Java version;
+  - lists of allowed values inside a message (the `okf.yaml` keys, `index_language`, `adr_readme_link`, the
+    `adr_status` values, the commands): a minor version may add an entry, and the message then names it. The
+    built-in document types do not change within a major version;
+  - the usage text printed by `--help` and after a usage error.
+- Input that a version rejects may be valid in a later minor version: a new optional key or a new allowed value
+  turns the former `okf.yaml` error (exit `2`) or finding into accepted input. The other direction is covered by
+  the first rule: input that is valid stays valid, with the same output.
 - The file name `okf.yaml` and the keys `repo`, `hub_repo`, `satellites` never change (tooling built around
   `okf.yaml` may rely on them).
 - Federation rule: a repo checked by a hub's `okf xcheck` may use a new key only once the hub's tool version

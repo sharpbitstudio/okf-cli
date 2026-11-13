@@ -121,7 +121,10 @@ data class OkfConfig(
             return parse(file.readText(Charsets.UTF_8))
         }
 
-        /** Parses `okf.yaml` text strictly: unknown keys, wrong types and an unsupported `schema_version` are errors. */
+        /**
+         * Parses `okf.yaml` text strictly: unknown keys, wrong types and an unsupported `schema_version` are errors
+         * (`schema_version` is checked first).
+         */
         fun parse(text: String): OkfConfig {
             val loaded = try {
                 yaml().load<Any?>(OkfFrontmatter.normalize(text))
@@ -129,9 +132,6 @@ data class OkfConfig(
                 throw OkfConfigException("$FILE_NAME does not parse: ${e.message?.replace(Regex("\\s+"), " ")}")
             }
             val data = loaded as? Map<*, *> ?: throw OkfConfigException("$FILE_NAME must be a YAML mapping, got ${loaded?.let { it::class.simpleName } ?: "an empty document"}")
-            val unknown = data.keys.map { it.toString() }.filter { it !in KEYS }.sorted()
-            if (unknown.isNotEmpty()) throw OkfConfigException("$FILE_NAME: unknown key(s) $unknown — allowed: ${KEYS.sorted()}")
-
             val version = data["schema_version"]
             when {
                 !data.containsKey("schema_version") -> throw OkfConfigException("$FILE_NAME: `schema_version` is required (supported: $SCHEMA_VERSION)")
@@ -140,6 +140,9 @@ data class OkfConfig(
                     "$FILE_NAME: unsupported schema_version $version — this okf-cli supports $SCHEMA_VERSION",
                 )
             }
+            val unknown = data.keys.map { it.toString() }.filter { it !in KEYS }.sorted()
+            if (unknown.isNotEmpty()) throw OkfConfigException("$FILE_NAME: unknown key(s) $unknown — allowed: ${KEYS.sorted()}")
+
             val repo = string(data, "repo") ?: throw OkfConfigException("$FILE_NAME: `repo` is required (the repository name)")
             val docsRoot = string(data, "docs_root")?.let { relativePath("docs_root", it) } ?: DEFAULT_DOCS_ROOT
             val indexCommand = string(data, "index_command")?.also(::indexCommand) ?: DEFAULT_INDEX_COMMAND
@@ -353,13 +356,14 @@ data class OkfConfig(
 
         // Duplicate keys are rejected, like in frontmatter. A value that does not fit its explicit tag
         // (`!!int bogus` → NumberFormatException) is wrapped into a YAMLException, so it is a config error too.
+        // A date-like value stays the text written, as in frontmatter.
         private fun yaml(): Yaml {
             val loaderOptions = LoaderOptions().apply {
                 isAllowDuplicateKeys = false
                 isWrappedToRootException = true
             }
             val dumperOptions = DumperOptions()
-            return Yaml(SafeConstructor(loaderOptions), Representer(dumperOptions), dumperOptions, loaderOptions)
+            return Yaml(SafeConstructor(loaderOptions), Representer(dumperOptions), dumperOptions, loaderOptions, OkfFrontmatter.NoTimestampResolver())
         }
     }
 }

@@ -286,7 +286,7 @@ class OkfRefCheckerTest {
     }
 
     @Test
-    fun `okfCheck reports reference findings as warnings, or as problems in refs strict mode`(@TempDir root: File) {
+    fun `okf check reports reference findings as warnings, or as problems in refs strict mode`(@TempDir root: File) {
         root.resolve("index.md").writeText("---\nokf_version: \"0.2\"\n---\n# Docs `Gone0.java`\n")
         root.resolve("adr").mkdirs()
         root.resolve("features").mkdirs()

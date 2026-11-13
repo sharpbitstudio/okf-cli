@@ -114,7 +114,7 @@ object OkfFrontmatter {
      * Keeps dates/timestamps as the literal strings the author wrote (no java.util.Date
      * coercion), so format checks (`adr_date` = YYYY-MM-DD, ISO-8601 `at`) see the raw value.
      */
-    private class NoTimestampResolver : Resolver() {
+    internal class NoTimestampResolver : Resolver() {
         override fun addImplicitResolver(tag: Tag, regexp: Pattern, first: String?, limit: Int) {
             if (tag != Tag.TIMESTAMP) super.addImplicitResolver(tag, regexp, first, limit)
         }
