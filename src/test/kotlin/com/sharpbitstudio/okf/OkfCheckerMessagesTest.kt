@@ -519,7 +519,22 @@ class OkfCheckerMessagesTest {
         externalRepos: Set<String> = emptySet(),
         satellites: List<Satellite> = emptyList(),
     ): OkfCheckResult =
-        OkfChecker.check(root, strict, NOW, refs, false, codePathsRequired, INDEX_COMMAND, hubRepo, externalRepos, satellites, LANGUAGE)
+        OkfChecker.check(
+            root,
+            // The repo name and any further setting come from TestConfigs; command and language are this suite's own.
+            TestConfigs.SR.copy(
+                indexCommand = INDEX_COMMAND,
+                indexLanguage = LANGUAGE,
+                hubRepo = hubRepo,
+                externalRepos = externalRepos,
+                satellites = satellites,
+            ),
+            strict,
+            NOW,
+            refs,
+            false,
+            codePathsRequired,
+        )
 
     /** [expected] when [messages] holds it verbatim, else every message (so a mismatch shows them all). */
     private fun pick(messages: List<String>, expected: String): String = messages.firstOrNull { it == expected } ?: messages.joinToString("\n")

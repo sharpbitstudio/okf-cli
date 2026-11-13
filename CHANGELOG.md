@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Kotlin API: `OkfChecker.check` takes the parsed `okf.yaml` (`check(root, config, …)`) instead of one parameter per
+  key, and the `OkfIndexRenderer` functions no longer default the index command (nor, for the sub-indexes, the
+  language). The CLI is unchanged.
+
 ## 1.0.0-alpha.1 — 2026-11-12
 
 First pre-release. Pre-releases are exempt from the compatibility contract: the defaults of `index_language`

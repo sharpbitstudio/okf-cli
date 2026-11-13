@@ -102,13 +102,13 @@ class OkfIndexRendererTest {
     @Test
     fun `ADR index renders every section, entry form and the unmigrated list (sr text)`() {
         IndexFixture.write(dir)
-        assertEquals(IndexFixture.ADR_INDEX_SR, OkfIndexRenderer.renderAdrIndex(dir.resolve(OkfIndexRenderer.ADR_DIR)))
+        assertEquals(IndexFixture.ADR_INDEX_SR, OkfIndexRenderer.renderAdrIndex(dir.resolve(OkfIndexRenderer.ADR_DIR), TestConfigs.INDEX_COMMAND, IndexLanguage.SR))
     }
 
     @Test
     fun `features index renders records, the title fallback and the unmigrated list (sr text)`() {
         IndexFixture.write(dir)
-        assertEquals(IndexFixture.FEATURES_INDEX_SR, OkfIndexRenderer.renderFeaturesIndex(dir.resolve(OkfIndexRenderer.FEATURES_DIR)))
+        assertEquals(IndexFixture.FEATURES_INDEX_SR, OkfIndexRenderer.renderFeaturesIndex(dir.resolve(OkfIndexRenderer.FEATURES_DIR), TestConfigs.INDEX_COMMAND, IndexLanguage.SR))
     }
 
     @Test
@@ -116,14 +116,14 @@ class OkfIndexRendererTest {
         IndexFixture.write(dir)
         assertEquals(
             IndexFixture.ADR_INDEX_EN,
-            OkfIndexRenderer.renderAdrIndex(dir.resolve(OkfIndexRenderer.ADR_DIR), language = IndexLanguage.EN),
+            OkfIndexRenderer.renderAdrIndex(dir.resolve(OkfIndexRenderer.ADR_DIR), TestConfigs.INDEX_COMMAND, IndexLanguage.EN),
         )
         assertEquals(
             IndexFixture.FEATURES_INDEX_EN,
-            OkfIndexRenderer.renderFeaturesIndex(dir.resolve(OkfIndexRenderer.FEATURES_DIR), language = IndexLanguage.EN),
+            OkfIndexRenderer.renderFeaturesIndex(dir.resolve(OkfIndexRenderer.FEATURES_DIR), TestConfigs.INDEX_COMMAND, IndexLanguage.EN),
         )
-        // The explicit default renders the `sr` text.
-        assertEquals(IndexFixture.ADR_INDEX_SR, OkfIndexRenderer.renderAdrIndex(dir.resolve(OkfIndexRenderer.ADR_DIR), language = IndexLanguage.SR))
+        // `sr` renders the `sr` text from the same fixture.
+        assertEquals(IndexFixture.ADR_INDEX_SR, OkfIndexRenderer.renderAdrIndex(dir.resolve(OkfIndexRenderer.ADR_DIR), TestConfigs.INDEX_COMMAND, IndexLanguage.SR))
     }
 
     @Test
@@ -141,7 +141,7 @@ class OkfIndexRendererTest {
 /**
  * A bundle (`adr/`, `features/`, root `index.md`) exercising every language-dependent branch of the index renderer
  * (and the status sections, the `→ [ADR-NNN]` tail and `%20` hrefs), valid for `okf check`, and the full indexes it
- * renders with the default `index_command`. The goldens are inline LF
+ * renders with `./gradlew okfIndex` as `index_command`. The goldens are inline LF
  * literals (not resource files), so a CRLF checkout cannot change the bytes compared.
  */
 internal object IndexFixture {

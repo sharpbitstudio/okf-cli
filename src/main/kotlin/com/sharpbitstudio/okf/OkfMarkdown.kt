@@ -30,7 +30,7 @@ object OkfMarkdown {
 
     /**
      * Inline link or image `[text](target "title")`; group 1 is the `[text]`, group 2 the target, bare or in `<…>`.
-     * Nested brackets in the text are not supported (not used in this bundle).
+     * Nested brackets in the link text are not supported.
      */
     private val INLINE_LINK = Regex("""!?(\[[^\]]*])\(\s*(<[^>]*>|$BARE_DEST)(?:\s+(?:"[^"]*"|'[^']*'))?\s*\)""")
 

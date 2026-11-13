@@ -86,25 +86,23 @@ object OkfChecker {
      * are problems when [refsStrict], warnings otherwise. Without [refs] no reference check runs, and
      * `code_paths` globs ([OkfCodePaths]) are checked for syntax only, not against the repo's files.
      * [codePathsRequired] makes `code_paths` mandatory on Accepted/Resolved ADRs, Feature Records and Satellite Notes.
-     * [indexCommand] (`index_command`, [OkfConfig]) renders the expected indexes and is named in the "run …" hints.
-     * [hubRepo] (`hub_repo`) must be set for a Satellite Note to be valid; a Feature Record's `repos` entries
-     * must be in [externalRepos] (`external_repos`). The generated sub-indexes are checked only for the
-     * sub-directories (`adr/`, `features/`) that exist. Non-empty [satellites] (`satellites`, hub only) makes the
-     * bundle-root index.md carry a fresh "Repos" section ([OkfIndexRenderer.replaceReposBlock]).
-     * [indexLanguage] (`index_language`) renders the expected sub-indexes.
+     * [config] (the parsed `okf.yaml`) supplies the rest: [OkfConfig.indexCommand] (`index_command`) renders the
+     * expected indexes and is named in the "run …" hints; [OkfConfig.indexLanguage] (`index_language`) renders the
+     * expected sub-indexes; [OkfConfig.hubRepo] (`hub_repo`) must be set for a Satellite Note to be valid; a Feature
+     * Record's `repos` entries must be in [OkfConfig.externalRepos] (`external_repos`); non-empty
+     * [OkfConfig.satellites] (`satellites`, hub only) makes the bundle-root index.md carry a fresh "Repos" section
+     * ([OkfIndexRenderer.replaceReposBlock]). The generated sub-indexes are checked only for the sub-directories
+     * (`adr/`, `features/`) that exist. [root] is the bundle directory ([OkfConfig.bundleDir]), not the repo root:
+     * `docs_root`, `ref_extensions` and `source_roots` are not read here; they reach the check through [root] and [refs].
      */
     fun check(
         root: File,
+        config: OkfConfig,
         strict: Boolean,
         now: Instant = Instant.now(),
         refs: OkfRefChecker? = null,
         refsStrict: Boolean = false,
         codePathsRequired: Boolean = false,
-        indexCommand: String = OkfConfig.DEFAULT_INDEX_COMMAND,
-        hubRepo: String? = null,
-        externalRepos: Set<String> = emptySet(),
-        satellites: List<Satellite> = emptyList(),
-        indexLanguage: IndexLanguage = IndexLanguage.SR,
     ): OkfCheckResult {
         val problems = mutableListOf<String>()
         val warnings = mutableListOf<String>()
@@ -133,7 +131,7 @@ object OkfChecker {
                     is Frontmatter.Invalid -> problems += "$path: ${fm.reason}"
                     is Frontmatter.Present -> {
                         validated++
-                        checkDocument(root, path, file, text, fm, now, warnings, hubRepo, externalRepos).forEach { problems += "$path: $it" }
+                        checkDocument(root, path, file, text, fm, now, warnings, config.hubRepo, config.externalRepos).forEach { problems += "$path: $it" }
                         checkCodePaths(path, fm, refs, codePathsRequired, problems, warnings, codePathsMissing)
                         refDocs += RefDoc(path, text)
                     }
@@ -143,18 +141,18 @@ object OkfChecker {
 
         // A sub-index is optional: required (and kept fresh) only when its directory exists.
         if (root.resolve(OkfIndexRenderer.ADR_DIR).isDirectory) {
-            problems += checkGeneratedIndex(root, OkfIndexRenderer.ADR_DIR, indexCommand) {
-                OkfIndexRenderer.renderAdrIndex(it, indexCommand, indexLanguage)
+            problems += checkGeneratedIndex(root, OkfIndexRenderer.ADR_DIR, config.indexCommand) {
+                OkfIndexRenderer.renderAdrIndex(it, config.indexCommand, config.indexLanguage)
             }
         }
         if (root.resolve(OkfIndexRenderer.FEATURES_DIR).isDirectory) {
-            problems += checkGeneratedIndex(root, OkfIndexRenderer.FEATURES_DIR, indexCommand) {
-                OkfIndexRenderer.renderFeaturesIndex(it, indexCommand, indexLanguage)
+            problems += checkGeneratedIndex(root, OkfIndexRenderer.FEATURES_DIR, config.indexCommand) {
+                OkfIndexRenderer.renderFeaturesIndex(it, config.indexCommand, config.indexLanguage)
             }
         }
 
-        if (satellites.isNotEmpty() && root.resolve("index.md").isFile) {
-            problems += checkReposSection(root.resolve("index.md"), satellites, indexCommand)
+        if (config.satellites.isNotEmpty() && root.resolve("index.md").isFile) {
+            problems += checkReposSection(root.resolve("index.md"), config.satellites, config.indexCommand)
         }
 
         if (strict) {
