@@ -46,6 +46,9 @@ committed indexes are stale. Run the index command once, or set `index_language:
   - `code_paths[i] '<glob>' is not a valid glob: Illegal character range near index …` (several lines) →
     ``code_paths[i] '<glob>' is not a valid glob: a `[...]` character class has a range whose start comes after its end (e.g. `[z-a]`)``
 - The compatibility contract now says what it covers for message text (`docs/reference.md`, "Compatibility").
+- Fix: in a `code_paths` glob, a negated class that starts with `-` (`[!-a]`) treated the `-` as the start of a
+  range (it is a literal `-` now, as in POSIX globs), and a class whose range spans `/` (`[+-0]`) could match `/`
+  (a class never matches `/`, as the finding for a `/` inside a class already says).
 
 ## 1.0.0-alpha.1 — 2026-11-12
 

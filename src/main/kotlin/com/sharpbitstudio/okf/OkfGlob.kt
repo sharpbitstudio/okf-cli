@@ -41,12 +41,12 @@ class OkfGlob private constructor(val pattern: String, private val regex: Regex)
                     throw IllegalArgumentException("${e.message} in alternative '$alternative'", e)
                 }
             }
-            // [translate] escapes every regex metacharacter except `-` inside a `[...]` class, so the one
-            // pattern the regex engine can still reject is a range whose start comes after its end.
+            // [translate] escapes every regex metacharacter except `-` inside a `[...]` class and rejects a reversed
+            // range itself, so the regex engine has nothing left to reject; the catch is only a fallback.
             val compiled = try {
                 Regex(regex)
-            } catch (_: PatternSyntaxException) {
-                throw IllegalArgumentException(RANGE_OUT_OF_ORDER)
+            } catch (e: PatternSyntaxException) {
+                throw IllegalArgumentException(RANGE_OUT_OF_ORDER, e)
             }
             return OkfGlob(glob, compiled)
         }
@@ -79,8 +79,15 @@ class OkfGlob private constructor(val pattern: String, private val regex: Regex)
                         val negated = glob[i + 1] in "!^"
                         val members = glob.substring(if (negated) i + 2 else i + 1, close)
                         require('/' !in members) { "a `[...]` character class cannot match `/`" }
-                        val escaped = members.map { if (it in """\[]^&""") "\\$it" else "$it" }.joinToString("")
-                        out.append(if (negated) "[^/$escaped]" else "[$escaped]")
+                        require(rangesInOrder(members)) { RANGE_OUT_OF_ORDER }
+                        val escaped = members.mapIndexed { k, it ->
+                            // A leading `-` is a literal member (POSIX); in a negated class it would follow the
+                            // inserted `/` and form a range starting at `/`, so it is escaped there.
+                            if (it in """\[]^&""" || (negated && k == 0 && it == '-')) "\\$it" else "$it"
+                        }.joinToString("")
+                        // A range may span `/` (`[+-0]`); the lookahead keeps a class off the separator without
+                        // touching the class text (an `&&[^/]` intersection would turn a trailing `-` into a range).
+                        out.append(if (negated) "[^/$escaped]" else "(?!/)[$escaped]")
                         i = close + 1
                         continue
                     }
@@ -90,6 +97,26 @@ class OkfGlob private constructor(val pattern: String, private val regex: Regex)
                 i++
             }
             return out.toString()
+        }
+
+        /**
+         * Whether every range in the [members] of a class (the text after `[`, `[!` or `[^` up to the closing `]`)
+         * runs upwards, read as the emitted Java class reads them: code point by code point, a member followed by
+         * `-` and another member is a range; a `-` first or last is a member (the leading `-` of a negated class is
+         * escaped, so it does not form a range with the inserted `/`), and escaped members count as themselves.
+         */
+        private fun rangesInOrder(members: String): Boolean {
+            val points = members.codePoints().toArray()
+            var k = 0
+            while (k < points.size) {
+                if (k + 2 < points.size && points[k + 1] == '-'.code) {
+                    if (points[k] > points[k + 2]) return false
+                    k += 3
+                } else {
+                    k++
+                }
+            }
+            return true
         }
 
         /**

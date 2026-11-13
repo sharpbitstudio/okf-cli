@@ -131,9 +131,66 @@ class OkfGlobTest {
     @Test
     fun `a reversed range in a character class is rejected with one line of the tool's own text`() {
         val reason = "a `[...]` character class has a range whose start comes after its end (e.g. `[z-a]`)"
-        for (glob in listOf("src/[z-a].kt", "src/[a--].kt", "src/{x,[z-a]}.kt")) {
+        for (glob in listOf("src/[z-a].kt", "src/[a--].kt", "src/[!z-a].kt", "src/[]z-a].kt")) {
             assertEquals(reason, assertThrows<IllegalArgumentException>(glob) { OkfGlob.compile(glob) }.message, glob)
         }
+        // Detected per alternative, so a multi-alternative glob names the alternative like every other diagnostic.
+        assertEquals(
+            "$reason in alternative 'src/[z-a].kt'",
+            assertThrows<IllegalArgumentException> { OkfGlob.compile("src/{x,[z-a]}.kt") }.message,
+        )
         assertTrue(OkfGlob.compile("src/[--a].kt").matches("src/-.kt"))
+    }
+
+    @Test
+    fun `a class with a literal leading or trailing dash and in-order ranges still compiles`() {
+        for (glob in listOf("x[-a]y", "x[a-]y", "x[!-a]y", "x[^a-]y", "x[a-z-]y", "x[-a-z]y", "x[]-a]y", "x[😀-😁]y")) {
+            OkfGlob.compile(glob)
+        }
+        assertTrue(OkfGlob.compile("x[-a]y").matches("x-y"))
+        assertTrue(OkfGlob.compile("x[a-z-]y").matches("x-y"))
+        assertTrue(OkfGlob.compile("x[a-z-]y").matches("xqy"))
+        assertTrue(OkfGlob.compile("x[😀-😁]y").matches("x😁y"), "ranges are read by code point")
+    }
+
+    @Test
+    fun `a leading dash in a negated character class is a literal member`() {
+        for (negation in listOf("!", "^")) {
+            val glob = OkfGlob.compile("x[${negation}-a]y")
+            assertTrue(glob.matches("xby"), "[$negation-a]")
+            assertTrue(glob.matches("x0y"), "[$negation-a]: `0` lies between `/` and `a` but is not a member")
+            assertFalse(glob.matches("x-y"), "[$negation-a]")
+            assertFalse(glob.matches("xay"), "[$negation-a]")
+            assertFalse(glob.matches("x/y"), "[$negation-a]: a negated class must not match the separator")
+
+            val dashOnly = OkfGlob.compile("x[${negation}--]y")
+            assertFalse(dashOnly.matches("x-y"), "[$negation--]")
+            assertTrue(dashOnly.matches("xay"), "[$negation--]")
+
+            val dashHash = OkfGlob.compile("x[${negation}-#]y")
+            assertFalse(dashHash.matches("x-y"), "[$negation-#]")
+            assertFalse(dashHash.matches("x#y"), "[$negation-#]")
+            assertTrue(dashHash.matches("x0y"), "[$negation-#]")
+
+            val dashRange = OkfGlob.compile("x[${negation}--a]y")
+            assertFalse(dashRange.matches("x-y"), "[$negation--a]: the range `-`..`a`")
+            assertFalse(dashRange.matches("x0y"), "[$negation--a]: the range `-`..`a`")
+            assertTrue(dashRange.matches("xby"), "[$negation--a]")
+        }
+    }
+
+    @Test
+    fun `a range that spans the slash never matches it`() {
+        val plusToZero = OkfGlob.compile("x[+-0]y")
+        assertFalse(plusToZero.matches("x/y"), "[+-0]")
+        for (path in listOf("x+y", "x.y", "x0y")) assertTrue(plusToZero.matches(path), "[+-0]: $path")
+        assertFalse(OkfGlob.compile("x[--a]y").matches("x/y"), "[--a]")
+        assertTrue(OkfGlob.compile("x[--a]y").matches("x-y"), "[--a]")
+        assertTrue(OkfGlob.compile("x[a-]y").matches("x-y"), "a trailing `-` stays a literal member")
+        val plain = OkfGlob.compile("x[ab]y")
+        assertTrue(plain.matches("xay"))
+        assertTrue(plain.matches("xby"))
+        assertFalse(plain.matches("xcy"))
+        assertFalse(plain.matches("x/y"))
     }
 }
