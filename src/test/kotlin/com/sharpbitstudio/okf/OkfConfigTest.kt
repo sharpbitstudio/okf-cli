@@ -40,7 +40,9 @@ class OkfConfigTest {
     fun `defaults when only the required keys are set`() {
         val config = OkfConfig.parse("schema_version: 1\nrepo: plaza-server-app\n")
         assertEquals("docs", config.docsRoot)
-        assertEquals("./gradlew okfIndex", config.indexCommand)
+        assertEquals("okf index", config.indexCommand)
+        assertEquals(IndexLanguage.EN, config.indexLanguage)
+        assertEquals(AdrReadmeLink.AUTO, config.adrReadmeLink)
         assertEquals(emptySet<String>(), config.externalRepos)
         assertEquals(emptyList<String>(), config.refExtensions)
         assertEquals(emptyList<String>(), config.sourceRoots)
@@ -116,8 +118,8 @@ class OkfConfigTest {
     }
 
     @Test
-    fun `index_language is sr or en, sr when absent`() {
-        assertEquals(IndexLanguage.SR, OkfConfig.parse("schema_version: 1\nrepo: r\n").indexLanguage)
+    fun `index_language is sr or en, en when absent`() {
+        assertEquals(IndexLanguage.EN, OkfConfig.parse("schema_version: 1\nrepo: r\n").indexLanguage)
         assertEquals(IndexLanguage.SR, OkfConfig.parse("schema_version: 1\nrepo: r\nindex_language: sr\n").indexLanguage)
         assertEquals(IndexLanguage.EN, OkfConfig.parse("schema_version: 1\nrepo: r\nindex_language: en\n").indexLanguage)
         assertEquals(IndexLanguage.EN, OkfConfig.parse("schema_version: 1\nrepo: r\nindex_language: \"en\"\n").indexLanguage)
@@ -130,6 +132,22 @@ class OkfConfigTest {
                 "schema_version: 1\nrepo: r\nindex_language: $value\n",
                 "okf.yaml: index_language '$shown' must be one of [sr, en]",
             )
+        }
+    }
+
+    @Test
+    fun `adr_readme_link is always or auto, auto when absent`() {
+        assertEquals(AdrReadmeLink.AUTO, OkfConfig.parse("schema_version: 1\nrepo: r\n").adrReadmeLink)
+        assertEquals(AdrReadmeLink.AUTO, OkfConfig.parse("schema_version: 1\nrepo: r\nadr_readme_link: auto\n").adrReadmeLink)
+        assertEquals(AdrReadmeLink.ALWAYS, OkfConfig.parse("schema_version: 1\nrepo: r\nadr_readme_link: always\n").adrReadmeLink)
+        assertEquals(AdrReadmeLink.ALWAYS, OkfConfig.parse("schema_version: 1\nrepo: r\nadr_readme_link: \"always\"\n").adrReadmeLink)
+    }
+
+    @Test
+    fun `adr_readme_link is case-sensitive, any other value is an error`() {
+        for ((value, shown) in listOf("Always" to "Always", "never" to "never", "1" to "1", "\"\"" to "", "" to "null", "[auto]" to "[auto]")) {
+            val e = assertThrows<OkfConfigException> { OkfConfig.parse("schema_version: 1\nrepo: r\nadr_readme_link: $value\n") }
+            assertEquals("okf.yaml: adr_readme_link '$shown' must be one of [always, auto]", e.message)
         }
     }
 

@@ -67,6 +67,8 @@ class OkfXcheckCliTest {
                 "core.autocrlf" to "false",
                 "core.fsmonitor" to "false",
                 "core.hooksPath" to home.resolve("no-hooks").path,
+                // The tool's own git calls inherit the global config: keep ignore rules repo-only.
+                "core.excludesFile" to home.resolve("empty").apply { writeText("") }.path,
             ).forEach { (key, value) -> git(repo, "config", key, value) }
         }
         assertEquals(0, run("index", "--repo=${hub.path}").code)
@@ -388,7 +390,7 @@ class OkfXcheckCliTest {
             listOf(
                 "okf xcheck: 2 setup problems:",
                 "  - sat-a: okf.yaml repo 'sat-x' does not match its checkout directory 'sat-a'",
-                "  - sat-b: okf.yaml: unknown key(s) [bogus] — allowed: [base_ref, docs_root, drift_days, external_repos, extra_types, hub_repo, " +
+                "  - sat-b: okf.yaml: unknown key(s) [bogus] — allowed: [adr_readme_link, base_ref, docs_root, drift_days, external_repos, extra_types, hub_repo, " +
                     "index_command, index_language, ref_extensions, repo, satellites, schema_version, source_roots]",
             ),
             xcheck().err.trim().lines(),

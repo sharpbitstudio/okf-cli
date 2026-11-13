@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+Upgrading from `1.0.0-alpha.1`: an `okf.yaml` that leaves `index_language` unset now gets English index text, and
+one that leaves `index_command` unset gets `okf index` in the generated marker and the "run …" hints; either way its
+committed indexes are stale. Run the index command once, or set `index_language: sr` and
+`index_command: ./gradlew okfIndex` to keep them. A bundle with
+`adr/` but no `adr/README.md` loses the link to that file in the ADR index; run the index command once, or set
+`adr_readme_link: always` to keep it. In a federation, upgrade the hub first.
+
 - Kotlin API: `OkfChecker.check` takes the parsed `okf.yaml` (`check(root, config, …)`) instead of one parameter per
   key, and the `OkfIndexRenderer` functions no longer default the index command (nor, for the sub-indexes, the
   language). The CLI is unchanged.
@@ -10,6 +17,11 @@
   `drift_days` (hub only: the drift threshold of `okf xcheck`; default 14). In a federation a satellite may use a
   new key only once the hub's version knows it. The usage text of `--base` names `base_ref`; the constant
   `OkfXcheck.DRIFT_DAYS` is gone (`OkfConfig.DEFAULT_DRIFT_DAYS`).
+- Defaults: `index_language` is `en` (was `sr`) and `index_command` is `okf index` (was `./gradlew okfIndex`).
+- New optional key `adr_readme_link` (`always` or `auto`, default `auto`): the generated ADR index links
+  `adr/README.md` only when that file exists; `always` renders the link unconditionally, as before. Kotlin API:
+  `OkfIndexRenderer.renderAdrIndex` takes the setting as a parameter, and `OkfConfig` gains a property for it (as
+  for each new key).
 
 ## 1.0.0-alpha.1 — 2026-11-12
 

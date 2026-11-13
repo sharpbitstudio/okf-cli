@@ -102,7 +102,7 @@ class OkfIndexRendererTest {
     @Test
     fun `ADR index renders every section, entry form and the unmigrated list (sr text)`() {
         IndexFixture.write(dir)
-        assertEquals(IndexFixture.ADR_INDEX_SR, OkfIndexRenderer.renderAdrIndex(dir.resolve(OkfIndexRenderer.ADR_DIR), TestConfigs.INDEX_COMMAND, IndexLanguage.SR))
+        assertEquals(IndexFixture.ADR_INDEX_SR, OkfIndexRenderer.renderAdrIndex(dir.resolve(OkfIndexRenderer.ADR_DIR), TestConfigs.INDEX_COMMAND, IndexLanguage.SR, AdrReadmeLink.AUTO))
     }
 
     @Test
@@ -116,15 +116,63 @@ class OkfIndexRendererTest {
         IndexFixture.write(dir)
         assertEquals(
             IndexFixture.ADR_INDEX_EN,
-            OkfIndexRenderer.renderAdrIndex(dir.resolve(OkfIndexRenderer.ADR_DIR), TestConfigs.INDEX_COMMAND, IndexLanguage.EN),
+            OkfIndexRenderer.renderAdrIndex(dir.resolve(OkfIndexRenderer.ADR_DIR), TestConfigs.INDEX_COMMAND, IndexLanguage.EN, AdrReadmeLink.AUTO),
         )
         assertEquals(
             IndexFixture.FEATURES_INDEX_EN,
             OkfIndexRenderer.renderFeaturesIndex(dir.resolve(OkfIndexRenderer.FEATURES_DIR), TestConfigs.INDEX_COMMAND, IndexLanguage.EN),
         )
         // `sr` renders the `sr` text from the same fixture.
-        assertEquals(IndexFixture.ADR_INDEX_SR, OkfIndexRenderer.renderAdrIndex(dir.resolve(OkfIndexRenderer.ADR_DIR), TestConfigs.INDEX_COMMAND, IndexLanguage.SR))
+        assertEquals(IndexFixture.ADR_INDEX_SR, OkfIndexRenderer.renderAdrIndex(dir.resolve(OkfIndexRenderer.ADR_DIR), TestConfigs.INDEX_COMMAND, IndexLanguage.SR, AdrReadmeLink.AUTO))
     }
+
+    @Test
+    fun `adr_readme_link always links README md even without the file`() {
+        IndexFixture.write(dir)
+        dir.resolve("adr/README.md").delete()
+        assertEquals(IndexFixture.ADR_INDEX_SR, renderAdr(IndexLanguage.SR, AdrReadmeLink.ALWAYS))
+        assertEquals(IndexFixture.ADR_INDEX_EN, renderAdr(IndexLanguage.EN, AdrReadmeLink.ALWAYS))
+    }
+
+    @Test
+    fun `adr_readme_link auto without README md drops only the link sentence`() {
+        IndexFixture.write(dir)
+        dir.resolve("adr/README.md").delete()
+        assertEquals(
+            IndexFixture.ADR_INDEX_SR.replace(" Konvencije, template i lifecycle: [README.md](./README.md).", ""),
+            renderAdr(IndexLanguage.SR, AdrReadmeLink.AUTO),
+        )
+        assertEquals(
+            IndexFixture.ADR_INDEX_EN.replace(" Conventions, template and lifecycle: [README.md](./README.md).", ""),
+            renderAdr(IndexLanguage.EN, AdrReadmeLink.AUTO),
+        )
+    }
+
+    // Discriminates only on a case-insensitive file system (Windows, macOS), where `File.isFile` would find `readme.md`.
+    @Test
+    fun `adr_readme_link auto matches the file name exactly, readme md does not link`() {
+        IndexFixture.write(dir)
+        dir.resolve("adr/README.md").delete()
+        dir.resolve("adr/readme.md").writeText("# ADRs\n")
+        assertEquals(
+            IndexFixture.ADR_INDEX_EN.replace(" Conventions, template and lifecycle: [README.md](./README.md).", ""),
+            renderAdr(IndexLanguage.EN, AdrReadmeLink.AUTO),
+        )
+    }
+
+    @Test
+    fun `adr_readme_link auto does not link a directory named README md`() {
+        IndexFixture.write(dir)
+        dir.resolve("adr/README.md").delete()
+        dir.resolve("adr/README.md").mkdir()
+        assertEquals(
+            IndexFixture.ADR_INDEX_EN.replace(" Conventions, template and lifecycle: [README.md](./README.md).", ""),
+            renderAdr(IndexLanguage.EN, AdrReadmeLink.AUTO),
+        )
+    }
+
+    private fun renderAdr(language: IndexLanguage, readmeLink: AdrReadmeLink) =
+        OkfIndexRenderer.renderAdrIndex(dir.resolve(OkfIndexRenderer.ADR_DIR), TestConfigs.INDEX_COMMAND, language, readmeLink)
 
     @Test
     fun `changed index keeps the existing line-ending style`() {

@@ -554,7 +554,7 @@ class OkfCheckerMessagesTest {
         root.listFiles()?.forEach { it.deleteRecursively() }
         root.resolve("index.md").writeText(ROOT_INDEX)
         files.forEach { (path, text) -> root.resolve(path).apply { parentFile.mkdirs() }.writeText(text) }
-        writeIndex(OkfIndexRenderer.ADR_DIR) { OkfIndexRenderer.renderAdrIndex(it, INDEX_COMMAND, LANGUAGE) }
+        writeIndex(OkfIndexRenderer.ADR_DIR) { OkfIndexRenderer.renderAdrIndex(it, INDEX_COMMAND, LANGUAGE, TestConfigs.SR.adrReadmeLink) }
         writeIndex(OkfIndexRenderer.FEATURES_DIR) { OkfIndexRenderer.renderFeaturesIndex(it, INDEX_COMMAND, LANGUAGE) }
     }
 

@@ -51,10 +51,13 @@ Pre-1.0. Releases are on the [releases page](https://github.com/sharpbitstudio/o
 pre-release `1.0.0-alpha.1`. Running the tool needs Java 17 or later and `git` on the `PATH`; building it from
 source needs JDK 17 or later (CI builds on JDK 25) and runs through the Gradle wrapper.
 
-Before 1.0.0 some defaults still change. Today `index_language` defaults to `sr`, so the fixed text of the
-generated indexes is Serbian; before 1.0.0 the defaults switch to English. Set `index_language` and
-`index_command` explicitly, as in the quick start below. `main` also knows `okf.yaml` keys that `1.0.0-alpha.1`
-rejects as unknown: `base_ref`, `extra_types`, `drift_days`.
+The released pre-release `1.0.0-alpha.1` has other defaults than `main`: `index_language: sr` and
+`index_command: ./gradlew okfIndex`. From the next release the defaults are `en` and `okf index`, and the generated
+ADR index links `adr/README.md` only when that file exists (`adr_readme_link`). The quick start below sets
+`index_language` and `index_command` and has no `adr/`, so it gives the same result with either; a bundle with
+`adr/` but no `adr/README.md` loses that link on upgrade unless it sets `adr_readme_link: always`. `main` also
+knows `okf.yaml` keys that `1.0.0-alpha.1` rejects as unknown: `base_ref`, `extra_types`, `drift_days`,
+`adr_readme_link`. Before 1.0.0 some message texts still change once; `CHANGELOG.md` will list them.
 
 ## Quick start
 

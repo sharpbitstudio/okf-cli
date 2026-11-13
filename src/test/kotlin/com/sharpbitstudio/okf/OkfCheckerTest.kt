@@ -552,7 +552,7 @@ class OkfCheckerTest {
         root.resolve(OkfIndexRenderer.ADR_DIR).mkdirs()
         root.resolve(OkfIndexRenderer.FEATURES_DIR).mkdirs()
         files.forEach { (path, text) -> root.resolve(path).apply { parentFile.mkdirs() }.writeText(text) }
-        writeIndex(OkfIndexRenderer.ADR_DIR) { OkfIndexRenderer.renderAdrIndex(it, TestConfigs.INDEX_COMMAND, IndexLanguage.SR) }
+        writeIndex(OkfIndexRenderer.ADR_DIR) { OkfIndexRenderer.renderAdrIndex(it, TestConfigs.INDEX_COMMAND, IndexLanguage.SR, TestConfigs.SR.adrReadmeLink) }
         writeIndex(OkfIndexRenderer.FEATURES_DIR) { OkfIndexRenderer.renderFeaturesIndex(it, TestConfigs.INDEX_COMMAND, IndexLanguage.SR) }
     }
 
