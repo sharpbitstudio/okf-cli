@@ -46,8 +46,8 @@ It has two jobs:
 - **`build`**:
   - builds and runs the tests;
   - smoke-tests the `all` jar on JDK 25;
-  - smoke-tests it again on a real Java 17 runtime against a minimal fixture repo (`index`, then a strict
-    `check`), so a Java 18+ API that slips into the code fails here.
+  - smoke-tests it again on a real Java 17 runtime against a small fixture repo with one ADR (`index`, which
+    writes the ADR index, then a strict `check`), so a Java 18+ API that slips into the code fails here.
 - **`okf`** checks this repo's own `docs/` bundle (see [Own docs bundle](#own-docs-bundle)) with all strict flags
   of `check`. The impact check compares against the merge-base with a base ref:
   - on a push to `main`, the commit `main` moved from (for a newly created ref there is none, and the impact
