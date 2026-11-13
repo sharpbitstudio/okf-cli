@@ -63,7 +63,7 @@ jobs:
         run: java -jar build/libs/okf-cli-*-all.jar version
 
       # The jars target Java 17 (consumers may run the fat jar there): run it on a real Java 17 runtime,
-      # against a minimal committed fixture repo, so a Java 18+ API slipping into the code fails here.
+      # against a small committed fixture repo with one ADR, so a Java 18+ API slipping into the code fails here.
       - name: Set up JDK 17 (Temurin)
         uses: actions/setup-java@v6
         with:
@@ -77,12 +77,14 @@ jobs:
           JAR="$(ls "$GITHUB_WORKSPACE"/build/libs/okf-cli-*-all.jar)"
           java -jar "$JAR" version
           FIXTURE="$RUNNER_TEMP/okf-fixture"
-          mkdir -p "$FIXTURE/docs"
+          mkdir -p "$FIXTURE/docs/adr"
           cd "$FIXTURE"
           git init -q -b main
           printf 'schema_version: 1\nrepo: fixture\n' > okf.yaml
           printf -- '---\nokf_version: "0.2"\n---\n# Docs\n' > docs/index.md
+          printf -- '---\ntype: ADR\ntitle: "Example"\ndescription: "When reading the fixture"\ntags: [fixture]\nstatus: stable\nadr_status: Accepted\nadr_date: 2026-01-01\ncode_paths: []\n---\n# Example\n' > docs/adr/ADR-001-example.md
           java -jar "$JAR" index --repo="$FIXTURE"
+          test -s docs/adr/index.md
           git add -A
           git -c user.name=ci -c user.email=ci@localhost -c commit.gpgsign=false commit -q -m fixture
           java -jar "$JAR" check --repo="$FIXTURE" --strict --refs-strict --code-paths-required
