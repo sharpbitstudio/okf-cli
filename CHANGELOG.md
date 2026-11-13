@@ -5,6 +5,11 @@
 - Kotlin API: `OkfChecker.check` takes the parsed `okf.yaml` (`check(root, config, …)`) instead of one parameter per
   key, and the `OkfIndexRenderer` functions no longer default the index command (nor, for the sub-indexes, the
   language). The CLI is unchanged.
+- New optional `okf.yaml` keys: `base_ref` (the branch `okf impact` compares against when `--base` is absent;
+  default `main`), `extra_types` (document types added to the built-in ones, without rules of their own) and
+  `drift_days` (hub only: the drift threshold of `okf xcheck`; default 14). In a federation a satellite may use a
+  new key only once the hub's version knows it. The usage text of `--base` names `base_ref`; the constant
+  `OkfXcheck.DRIFT_DAYS` is gone (`OkfConfig.DEFAULT_DRIFT_DAYS`).
 
 ## 1.0.0-alpha.1 — 2026-11-12
 

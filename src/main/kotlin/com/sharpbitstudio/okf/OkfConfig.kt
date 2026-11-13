@@ -9,6 +9,7 @@ import org.yaml.snakeyaml.representer.Representer
 import java.io.File
 import java.net.URI
 import java.net.URISyntaxException
+import java.util.Locale
 
 /** `okf.yaml` is missing or invalid; the CLI exits with the usage/config code. */
 class OkfConfigException(message: String) : OkfException(message)
@@ -62,6 +63,15 @@ data class OkfConfig(
     val satellites: List<Satellite> = emptyList(),
     /** Language of the fixed text of the generated `adr/index.md` and `features/index.md` (`index_language`). */
     val indexLanguage: IndexLanguage = IndexLanguage.SR,
+    /**
+     * The branch `okf impact` compares against when `--base` is absent (`base_ref`): the merge-base with
+     * `origin/<baseRef>`, or with `<baseRef>` when that remote-tracking ref does not exist.
+     */
+    val baseRef: String = DEFAULT_BASE_REF,
+    /** Document types (`extra_types`) added to [OkfFrontmatter.TYPES], in `okf.yaml` order; they carry no rules of their own. */
+    val extraTypes: List<String> = emptyList(),
+    /** Hub only (`drift_days`): a Satellite Note committed more than this many days after its hub record is drift ([OkfXcheck]). */
+    val driftDays: Int = DEFAULT_DRIFT_DAYS,
 ) {
     /** The bundle directory under [repoDir]. */
     fun bundleDir(repoDir: File): File = repoDir.resolve(docsRoot)
@@ -71,16 +81,22 @@ data class OkfConfig(
         const val SCHEMA_VERSION = 1
         const val DEFAULT_DOCS_ROOT = "docs"
         const val DEFAULT_INDEX_COMMAND = "./gradlew okfIndex"
+        const val DEFAULT_BASE_REF = "main"
+        const val DEFAULT_DRIFT_DAYS = 14
+        const val MAX_DRIFT_DAYS = 3650
 
         private val KEYS = setOf(
             "schema_version", "repo", "docs_root", "index_command", "external_repos", "ref_extensions", "source_roots", "hub_repo",
-            "satellites", "index_language",
+            "satellites", "index_language", "base_ref", "extra_types", "drift_days",
         )
         private val SATELLITE_KEYS = listOf("repo", "description", "index")
 
         /** Characters that would end or break the `(<index>)` target of a rendered Markdown link. */
         private const val LINK_BREAKERS = "()<>"
         private val WINDOWS_DRIVE = Regex("""^[A-Za-z]:""")
+
+        /** A branch name for `base_ref`: `/`-joined ASCII parts, each starting with a letter, digit or `_`. */
+        private val BRANCH_NAME = Regex("""[A-Za-z0-9_][A-Za-z0-9._-]*(/[A-Za-z0-9_][A-Za-z0-9._-]*)*""")
 
         /** Reads `<repoDir>/okf.yaml`; throws [OkfConfigException] when it is missing or invalid. */
         fun load(repoDir: File): OkfConfig {
@@ -131,17 +147,67 @@ data class OkfConfig(
             }
             val satellites = satellites(data, repo, externalRepos.toSet(), hubRepo)
             val indexLanguage = indexLanguage(data)
+            val baseRef = string(data, "base_ref")?.also(::baseRef) ?: DEFAULT_BASE_REF
+            val extraTypes = strings(data, "extra_types").onEach(::extraType)
+            val driftDays = driftDays(data, satellites)
             return OkfConfig(
-                repo,
-                docsRoot,
-                indexCommand,
-                externalRepos.toSet(),
-                refExtensions.distinct(),
-                sourceRoots.distinct(),
-                hubRepo,
-                satellites,
-                indexLanguage,
+                repo = repo,
+                docsRoot = docsRoot,
+                indexCommand = indexCommand,
+                externalRepos = externalRepos.toSet(),
+                refExtensions = refExtensions.distinct(),
+                sourceRoots = sourceRoots.distinct(),
+                hubRepo = hubRepo,
+                satellites = satellites,
+                indexLanguage = indexLanguage,
+                baseRef = baseRef,
+                extraTypes = extraTypes.distinct(),
+                driftDays = driftDays,
             )
+        }
+
+        /**
+         * `base_ref` reaches `git rev-parse` as an argument, so it is a conservative branch name ([BRANCH_NAME], no `..`,
+         * no part ending in `.` or `.lock`), and not `HEAD` or a name without `/` ending in `_HEAD` (git resolves those
+         * root-level pseudo-refs itself).
+         */
+        private fun baseRef(value: String) {
+            val shown = value.escapeControls()
+            if (!BRANCH_NAME.matches(value) || ".." in value || value.split('/').any { it.endsWith('.') || it.endsWith(".lock") }) {
+                throw OkfConfigException(
+                    "$FILE_NAME: base_ref '$shown' must be a branch name: parts of ASCII letters, digits, `.`, `_` or `-` joined by `/`, " +
+                        "each starting with a letter, digit or `_` and not ending with `.` or `.lock`, without `..`",
+                )
+            }
+            val upper = value.uppercase(Locale.ROOT)
+            if (upper == "HEAD" || ('/' !in value && upper.endsWith("_HEAD"))) {
+                throw OkfConfigException(
+                    "$FILE_NAME: base_ref '$shown' must be a branch name, not `HEAD` or a name without `/` ending in `_HEAD` " +
+                        "(git reserves those, such as `FETCH_HEAD`; compared ignoring case)",
+                )
+            }
+        }
+
+        /** An `extra_types` entry is one line and not a built-in type ([OkfFrontmatter.TYPES]) in another spelling. */
+        private fun extraType(value: String) {
+            if (value.any(Char::isISOControl)) {
+                throw OkfConfigException("$FILE_NAME: extra_types entry '${value.escapeControls()}' must be one line (no control characters)")
+            }
+            val builtIn = OkfFrontmatter.TYPES.firstOrNull { it.equals(value, ignoreCase = true) } ?: return
+            throw OkfConfigException("$FILE_NAME: extra_types entry '$value' is already the built-in type '$builtIn' (compared ignoring case)")
+        }
+
+        /** `drift_days` (hub only: a non-empty [satellites]): an integer from 1 to [MAX_DRIFT_DAYS], [DEFAULT_DRIFT_DAYS] when absent. */
+        private fun driftDays(data: Map<*, *>, satellites: List<Satellite>): Int {
+            if (!data.containsKey("drift_days")) return DEFAULT_DRIFT_DAYS
+            if (satellites.isEmpty()) {
+                throw OkfConfigException("$FILE_NAME: `drift_days` is only allowed in the hub (a repo with a non-empty `satellites`)")
+            }
+            val value = data["drift_days"]
+            if (value !is Int || value !in 1..MAX_DRIFT_DAYS) {
+                throw OkfConfigException("$FILE_NAME: `drift_days` must be an integer from 1 to $MAX_DRIFT_DAYS, got '${value.toString().escapeControls()}'")
+            }
+            return value
         }
 
         /** `index_language`: exactly one of the [IndexLanguage] values (case-sensitive), [IndexLanguage.SR] when absent. */

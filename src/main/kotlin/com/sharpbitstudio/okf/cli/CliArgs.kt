@@ -28,7 +28,7 @@ data class CliArgs(
     val refsStrict: Boolean = false,
     val codePathsRequired: Boolean = false,
     val impactStrict: Boolean = false,
-    /** `--base`: `null` when absent (default bases), the value as given otherwise — empty means "skip". */
+    /** `--base`: `null` when absent (the `base_ref` bases), the value as given otherwise — empty means "skip". */
     val base: String? = null,
     /** `--workspace` (required by `xcheck`): the directory holding every satellite checkout as `<workspace>/<repo>`. */
     val workspace: File? = null,

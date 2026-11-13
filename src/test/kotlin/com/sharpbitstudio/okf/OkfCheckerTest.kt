@@ -511,6 +511,41 @@ class OkfCheckerTest {
         assertEquals(emptyList<String>(), OkfChecker.check(root, TestConfigs.SR, strict = true, now = NOW).problems)
     }
 
+    @Test
+    fun `extra_types extends the taxonomy, the finding lists the sorted union`() {
+        bundle("runbook.md" to "---\ntype: Runbook\ntitle: \"Deploy\"\nstatus: stable\n---\n# Deploy\n", "guide.md" to "---\ntype: Blog\n---\n")
+        val result = OkfChecker.check(root, TestConfigs.SR.copy(extraTypes = listOf("Runbook")), strict = true, now = NOW)
+        assertEquals(
+            listOf(
+                "guide.md: type 'Blog' is not in the taxonomy " +
+                    "[ADR, Convention, Feature Record, Guide, Plan, Product Spec, Risk Register, Runbook, Satellite Note]",
+            ),
+            result.problems,
+        )
+        assertEquals(2, result.validated)
+    }
+
+    @Test
+    fun `an extra type has no rules of its own`() {
+        bundle(
+            "adr/ADR-002-runbook.md" to "---\ntype: Runbook\ntitle: \"Runbook\"\n---\n",
+            "runbook.md" to "---\ntype: Runbook\nhub: features/invite-respond\nrepos: [mobile-proto]\n---\n",
+            "plain.md" to "---\ntype: Runbook\nstale_after: 2026-01-01T00:00:00Z\n---\n",
+        )
+        val config = TestConfigs.SR.copy(extraTypes = listOf("Runbook"), hubRepo = HUB, externalRepos = setOf(HUB, "mobile-proto"))
+        val result = OkfChecker.check(root, config, strict = true, now = NOW, codePathsRequired = true)
+        assertEquals(
+            listOf(
+                "adr/ADR-002-runbook.md: files named adr/ADR-NNN-*.md must have `type: ADR`, got 'Runbook'",
+                "runbook.md: `hub` is only allowed on Satellite Notes (got type 'Runbook')",
+                "runbook.md: `repos` is only allowed on Feature Records (got type 'Runbook')",
+            ),
+            result.problems.filter { !it.startsWith("adr/index.md") },
+        )
+        assertEquals(emptyList<String>(), result.codePathsMissing)
+        assertEquals(listOf("plain.md: stale_after 2026-01-01T00:00:00Z is in the past — review and re-verify the content."), result.warnings)
+    }
+
     /** Writes a minimal bundle (root index.md, `adr/`, `features/`), the given files, then fresh sub-indexes. */
     private fun bundle(vararg files: Pair<String, String>) {
         root.resolve("index.md").writeText("---\nokf_version: \"0.2\"\n---\n# Docs\n")

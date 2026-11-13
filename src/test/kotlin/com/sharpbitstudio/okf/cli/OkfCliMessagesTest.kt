@@ -76,8 +76,9 @@ class OkfCliMessagesTest {
                 "  --refs-strict               broken code references are failures                           [check]\n" +
                 "  --code-paths-required       Accepted/Resolved ADRs, Feature Records and Satellite Notes    [check]\n" +
                 "                              need code_paths\n" +
-                "  --base=<ref>                compare against merge-base with <ref> (default origin/main,\n" +
-                "                              fallback main; empty or all-zero SHA = skip)                   [impact]\n" +
+                "  --base=<ref>                compare against merge-base with <ref> (default\n" +
+                "                              origin/<base_ref>, fallback <base_ref>; base_ref in okf.yaml\n" +
+                "                              defaults to main; empty or all-zero SHA = skip)                [impact]\n" +
                 "  --impact-strict             impact findings are failures                                   [impact]\n" +
                 "  --workspace=<dir>           directory holding every satellite checkout as <dir>/<repo>    [xcheck, required]\n" +
                 "  --report=<file>             Markdown report, written when there are findings and deleted  [xcheck]\n" +

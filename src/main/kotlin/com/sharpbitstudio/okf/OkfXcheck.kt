@@ -91,14 +91,11 @@ class XcheckSetupException(val findings: List<XcheckFinding>) :
  *   [OkfRefChecker.checkSiblingRefs]); references into other `external_repos` are only counted;
  * - (b) every Satellite Note's `hub: features/<slug>` names a hub Feature Record;
  * - (c) a Feature Record's `repos:` and the Satellite Notes pointing at it agree in both directions;
- * - (d) a warning when a Satellite Note was last committed more than [DRIFT_DAYS] days after its hub record
+ * - (d) a warning when a Satellite Note was last committed more than [OkfConfig.driftDays] days after its hub record
  *   (a shallow clone is a failure: per-file history would be wrong);
  * - (e) each `satellites[].index` URL ends with the satellite's `/<docs_root>/index.md`.
  */
 object OkfXcheck {
-    /** A Satellite Note committed more than this many days after its hub record is drift (d). */
-    const val DRIFT_DAYS = 14L
-
     private const val SECONDS_PER_DAY = 86_400L
     private const val REPOS_KEY = OkfChecker.REPOS_KEY
 
@@ -227,7 +224,7 @@ object OkfXcheck {
             if (recordPath !in recordTimes) recordTimes[recordPath] = OkfGit.lastCommitTime(hub.dir, recordPath)
             val recordTime = recordTimes[recordPath] ?: continue
             val noteTime = OkfGit.lastCommitTime(link.satellite.dir, notePath) ?: continue
-            if (noteTime - recordTime > DRIFT_DAYS * SECONDS_PER_DAY) {
+            if (noteTime - recordTime > hub.config.driftDays * SECONDS_PER_DAY) {
                 warnings += XcheckFinding(
                     XcheckKind.DRIFT,
                     "${hub.name}/$recordPath:1",

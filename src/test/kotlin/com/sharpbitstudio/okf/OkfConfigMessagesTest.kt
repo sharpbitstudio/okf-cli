@@ -39,8 +39,8 @@ class OkfConfigMessagesTest {
     @Test
     fun `unknown keys`() {
         assertEquals(
-            "okf.yaml: unknown key(s) [bogus, extra] — allowed: [docs_root, external_repos, hub_repo, index_command, index_language, " +
-                "ref_extensions, repo, satellites, schema_version, source_roots]",
+            "okf.yaml: unknown key(s) [bogus, extra] — allowed: [base_ref, docs_root, drift_days, external_repos, extra_types, hub_repo, " +
+                "index_command, index_language, ref_extensions, repo, satellites, schema_version, source_roots]",
             configError("schema_version: 1\nrepo: test-repo\nextra: 1\nbogus: 2\n"),
             "OkfConfig#4",
         )

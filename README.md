@@ -32,9 +32,10 @@ How the checks relate to the spec:
   a list of stamps); `stale_after` is an ISO 8601 instant and gives a warning once it has passed; `index.md` is
   reserved and carries no frontmatter, except `okf_version` on the bundle root.
 - **Stricter than the spec:** the bundle-root `index.md` with `okf_version: "0.2"` is required; `type` comes
-  from a closed taxonomy of eight types (`ADR`, `Feature Record`, `Plan`, `Guide`, `Risk Register`,
-  `Convention`, `Product Spec`, `Satellite Note`); ADRs are named `adr/ADR-NNN-<slug>.md` and need `title`,
-  `description`, `tags`, an `adr_status` consistent with `status`, and an `adr_date`.
+  from a taxonomy of eight built-in types (`ADR`, `Feature Record`, `Plan`, `Guide`, `Risk Register`,
+  `Convention`, `Product Spec`, `Satellite Note`), which a repo can extend with `extra_types`; ADRs are named
+  `adr/ADR-NNN-<slug>.md` and need `title`, `description`, `tags`, an `adr_status` consistent with `status`, and
+  an `adr_date`.
 - **Additions beyond the spec:** `code_paths` (the code a document describes), `superseded_by` and `amended` on
   ADRs, `hub` / `repos` (documentation spread over several repos), `Docs-Impact:` commit trailers, code
   references in document bodies, generated sub-indexes.
@@ -52,7 +53,8 @@ source needs JDK 17 or later (CI builds on JDK 25) and runs through the Gradle w
 
 Before 1.0.0 some defaults still change. Today `index_language` defaults to `sr`, so the fixed text of the
 generated indexes is Serbian; before 1.0.0 the defaults switch to English. Set `index_language` and
-`index_command` explicitly, as in the quick start below.
+`index_command` explicitly, as in the quick start below. `main` also knows `okf.yaml` keys that `1.0.0-alpha.1`
+rejects as unknown: `base_ref`, `extra_types`, `drift_days`.
 
 ## Quick start
 

@@ -186,6 +186,51 @@ class OkfXcheckCliTest {
     }
 
     @Test
+    fun `the hub's drift_days sets the drift threshold`() {
+        val hubConfig = hub.resolve("okf.yaml").readText()
+        hub.resolve("okf.yaml").writeText(hubConfig + "drift_days: 20\n")
+        write(satA, "docs/invite/NOTE.md", note(body = "Changed.\n"))
+        commit(satA, "note changed", DAY_0 + 20 * DAY) // exactly 20 days: not drift
+        write(satB, "doc/NOTE.md", note(body = "Changed.\n"))
+        commit(satB, "note changed", DAY_0 + 21 * DAY)
+
+        val run = xcheck()
+        assertEquals(0, run.code, run.toString())
+        assertEquals(
+            "OKF XCHECK WARNING: hub/docs/features/invite.md:1: hub record docs/features/invite.md is 21 days older than " +
+                "sat-b/doc/NOTE.md — distill the satellite changes into the record",
+            run.err.trim(),
+        )
+
+        hub.resolve("okf.yaml").writeText(hubConfig + "drift_days: 1\n")
+        val strict = xcheck()
+        assertEquals(0, strict.code, strict.toString())
+        assertEquals(
+            listOf(
+                "OKF XCHECK WARNING: hub/docs/features/invite.md:1: hub record docs/features/invite.md is 20 days older than " +
+                    "sat-a/docs/invite/NOTE.md — distill the satellite changes into the record",
+                "OKF XCHECK WARNING: hub/docs/features/invite.md:1: hub record docs/features/invite.md is 21 days older than " +
+                    "sat-b/doc/NOTE.md — distill the satellite changes into the record",
+            ),
+            strict.err.trim().lines(),
+        )
+    }
+
+    @Test
+    fun `drift_days in a satellite fails its own check and is a setup error of xcheck`() {
+        write(satA, "okf.yaml", "schema_version: 1\nrepo: sat-a\nhub_repo: hub\nexternal_repos: [hub, sat-b]\ndrift_days: 5\n")
+        val hubOnly = "okf.yaml: `drift_days` is only allowed in the hub (a repo with a non-empty `satellites`)"
+
+        val check = run("check", "--repo=${satA.path}")
+        assertEquals(2, check.code, check.toString())
+        assertEquals("okf check: $hubOnly", check.err.trim())
+
+        val run = xcheck()
+        assertEquals(2, run.code, run.toString())
+        assertEquals("okf xcheck: sat-a: $hubOnly", run.err.trim())
+    }
+
+    @Test
     fun `problems and warnings together - exit 1, report holds both, summary counts both`() {
         write(satA, "docs/invite/NOTE.md", note(body = "`hub/docs/gone.md`\n"))
         commit(satA, "note changed", DAY_0 + 20 * DAY)
@@ -343,8 +388,8 @@ class OkfXcheckCliTest {
             listOf(
                 "okf xcheck: 2 setup problems:",
                 "  - sat-a: okf.yaml repo 'sat-x' does not match its checkout directory 'sat-a'",
-                "  - sat-b: okf.yaml: unknown key(s) [bogus] — allowed: [docs_root, external_repos, hub_repo, index_command, index_language, ref_extensions, " +
-                    "repo, satellites, schema_version, source_roots]",
+                "  - sat-b: okf.yaml: unknown key(s) [bogus] — allowed: [base_ref, docs_root, drift_days, external_repos, extra_types, hub_repo, " +
+                    "index_command, index_language, ref_extensions, repo, satellites, schema_version, source_roots]",
             ),
             xcheck().err.trim().lines(),
         )

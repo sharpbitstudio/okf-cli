@@ -88,8 +88,9 @@ object OkfChecker {
      * [codePathsRequired] makes `code_paths` mandatory on Accepted/Resolved ADRs, Feature Records and Satellite Notes.
      * [config] (the parsed `okf.yaml`) supplies the rest: [OkfConfig.indexCommand] (`index_command`) renders the
      * expected indexes and is named in the "run …" hints; [OkfConfig.indexLanguage] (`index_language`) renders the
-     * expected sub-indexes; [OkfConfig.hubRepo] (`hub_repo`) must be set for a Satellite Note to be valid; a Feature
-     * Record's `repos` entries must be in [OkfConfig.externalRepos] (`external_repos`); non-empty
+     * expected sub-indexes; [OkfConfig.extraTypes] (`extra_types`) extends the `type` taxonomy; [OkfConfig.hubRepo]
+     * (`hub_repo`) must be set for a Satellite Note to be valid; a Feature Record's `repos` entries must be in
+     * [OkfConfig.externalRepos] (`external_repos`); non-empty
      * [OkfConfig.satellites] (`satellites`, hub only) makes the bundle-root index.md carry a fresh "Repos" section
      * ([OkfIndexRenderer.replaceReposBlock]). The generated sub-indexes are checked only for the sub-directories
      * (`adr/`, `features/`) that exist. [root] is the bundle directory ([OkfConfig.bundleDir]), not the repo root:
@@ -110,6 +111,7 @@ object OkfChecker {
         val codePathsMissing = mutableListOf<Pair<String, String>>()
         val refDocs = mutableListOf<RefDoc>()
         var validated = 0
+        val types = OkfFrontmatter.TYPES + config.extraTypes
 
         // Checked explicitly: the walk below only validates index.md when it exists.
         if (!root.resolve("index.md").isFile) problems += MISSING_ROOT_INDEX
@@ -131,7 +133,7 @@ object OkfChecker {
                     is Frontmatter.Invalid -> problems += "$path: ${fm.reason}"
                     is Frontmatter.Present -> {
                         validated++
-                        checkDocument(root, path, file, text, fm, now, warnings, config.hubRepo, config.externalRepos).forEach { problems += "$path: $it" }
+                        checkDocument(root, path, file, text, fm, now, warnings, types, config.hubRepo, config.externalRepos).forEach { problems += "$path: $it" }
                         checkCodePaths(path, fm, refs, codePathsRequired, problems, warnings, codePathsMissing)
                         refDocs += RefDoc(path, text)
                     }
@@ -191,6 +193,7 @@ object OkfChecker {
         fm: Frontmatter.Present,
         now: Instant,
         warnings: MutableList<String>,
+        types: Set<String>,
         hubRepo: String?,
         externalRepos: Set<String>,
     ): List<String> = buildList {
@@ -199,7 +202,7 @@ object OkfChecker {
         when {
             type == null ->
                 add("`type` is missing or empty" + if (adrFile) " (files named adr/ADR-NNN-*.md must have `type: ADR`)" else "")
-            type !in OkfFrontmatter.TYPES -> add("type '$type' is not in the taxonomy ${OkfFrontmatter.TYPES.sorted()}")
+            type !in types -> add("type '$type' is not in the taxonomy ${types.sorted()}")
         }
         if (type != null && adrFile && type != "ADR") add("files named adr/ADR-NNN-*.md must have `type: ADR`, got '$type'")
         if (type == "ADR" && !adrFile) {
