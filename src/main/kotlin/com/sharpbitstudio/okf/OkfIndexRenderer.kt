@@ -9,6 +9,7 @@ import java.io.File
  * Output is deterministic: LF line endings, single trailing newline ([write] keeps an existing file's
  * line endings). `indexCommand` is the repo's `index_command` ([OkfConfig]); it appears in the generated text.
  * `language` (`index_language`) picks the fixed text in [Texts]; everything else is the same in every language.
+ * `readmeLink` (`adr_readme_link`) decides whether the ADR index intro links `adr/README.md`.
  */
 object OkfIndexRenderer {
     /** First line of every generated index. */
@@ -40,8 +41,10 @@ object OkfIndexRenderer {
      */
     private class Texts(
         val adrTitle: String,
-        /** The ADR index intro, around the `index_command`. */
+        /** The ADR index intro without the README link, around the `index_command`. */
         val adrIntro: (indexCommand: String) -> String,
+        /** The sentence that links `adr/README.md`; it follows [adrIntro] after one space. */
+        val adrReadmeLink: String,
         val unmigratedSection: String,
         val unmigratedEntry: String,
         val amended: (date: String) -> String,
@@ -59,9 +62,9 @@ object OkfIndexRenderer {
             adrTitle = "# ADR Registar",
             adrIntro = { indexCommand ->
                 "Jedini registar ADR-ova — generisan iz frontmatter-a (`$indexCommand`), grupisan po " +
-                    "statusu, sa „kada čitati\" opisom i tagovima uz svaki ADR. Konvencije, template i lifecycle: " +
-                    "[README.md](./README.md)."
+                    "statusu, sa „kada čitati\" opisom i tagovima uz svaki ADR."
             },
+            adrReadmeLink = "Konvencije, template i lifecycle: [README.md](./README.md).",
             unmigratedSection = "Nije migrirano",
             unmigratedEntry = " - još bez frontmatter-a",
             amended = { " (izmenjeno $it)" },
@@ -72,21 +75,29 @@ object OkfIndexRenderer {
             adrTitle = "# ADR Registry",
             adrIntro = { indexCommand ->
                 "The single ADR registry, generated from frontmatter (`$indexCommand`) and grouped by status, " +
-                    "with a \"when to read\" description and tags for each ADR. Conventions, template and lifecycle: " +
-                    "[README.md](./README.md)."
+                    "with a \"when to read\" description and tags for each ADR."
             },
+            adrReadmeLink = "Conventions, template and lifecycle: [README.md](./README.md).",
             unmigratedSection = "Not migrated",
             unmigratedEntry = " - no frontmatter yet",
             amended = { " (amended $it)" },
         )
 
+    /**
+     * The ADR index of [adrDir]. Its intro links `README.md` when [readmeLink] is [AdrReadmeLink.ALWAYS], or
+     * [AdrReadmeLink.AUTO] and [adrDir] holds a file named exactly `README.md`.
+     */
     fun renderAdrIndex(
         adrDir: File,
         indexCommand: String,
         language: IndexLanguage,
+        readmeLink: AdrReadmeLink,
     ): String {
         val texts = texts(language)
-        val adrs = markdownFiles(adrDir)
+        val listing = listing(adrDir)
+        // The exact name: `File.isFile` alone ignores case on Windows and macOS, and the index must not depend on the OS.
+        val linked = readmeLink == AdrReadmeLink.ALWAYS || listing.any { it.isFile && it.name == "README.md" }
+        val adrs = markdownFiles(listing)
             .mapNotNull { file -> ADR_FILE.matchEntire(file.name)?.let { file to it.groupValues[1] } }
             .sortedWith(compareBy({ it.second.toInt() }, { it.first.name }))
 
@@ -123,7 +134,7 @@ object OkfIndexRenderer {
         }
 
         return render(
-            header = listOf(texts.adrTitle, "", texts.adrIntro(indexCommand)),
+            header = listOf(texts.adrTitle, "", texts.adrIntro(indexCommand) + if (linked) " " + texts.adrReadmeLink else ""),
             sections = sections + (texts.unmigratedSection to unmigrated),
             indexCommand = indexCommand,
         )
@@ -137,7 +148,7 @@ object OkfIndexRenderer {
         val texts = texts(language)
         val records = mutableListOf<String>()
         val unmigrated = mutableListOf<String>()
-        for (file in markdownFiles(featuresDir).filter { it.name !in NON_ENTRIES }) {
+        for (file in markdownFiles(listing(featuresDir)).filter { it.name !in NON_ENTRIES }) {
             when (val fm = readForIndex(file)) {
                 Frontmatter.Absent ->
                     unmigrated += "* [${file.nameWithoutExtension}](${href(file)})${texts.unmigratedEntry}"
@@ -203,8 +214,10 @@ object OkfIndexRenderer {
 
     private const val BOM = "\uFEFF"
 
-    private fun markdownFiles(dir: File): List<File> =
-        (dir.listFiles() ?: emptyArray()).filter { it.isFile && it.extension == "md" }.sortedBy { it.name }
+    private fun listing(dir: File): Array<File> = dir.listFiles() ?: emptyArray()
+
+    private fun markdownFiles(listing: Array<File>): List<File> =
+        listing.filter { it.isFile && it.extension == "md" }.sortedBy { it.name }
 
     private fun readForIndex(file: File): Frontmatter =
         OkfFrontmatter.read(file).also {

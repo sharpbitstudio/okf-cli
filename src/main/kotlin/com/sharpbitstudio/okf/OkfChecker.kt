@@ -88,8 +88,9 @@ object OkfChecker {
      * [codePathsRequired] makes `code_paths` mandatory on Accepted/Resolved ADRs, Feature Records and Satellite Notes.
      * [config] (the parsed `okf.yaml`) supplies the rest: [OkfConfig.indexCommand] (`index_command`) renders the
      * expected indexes and is named in the "run …" hints; [OkfConfig.indexLanguage] (`index_language`) renders the
-     * expected sub-indexes; [OkfConfig.extraTypes] (`extra_types`) extends the `type` taxonomy; [OkfConfig.hubRepo]
-     * (`hub_repo`) must be set for a Satellite Note to be valid; a Feature Record's `repos` entries must be in
+     * expected sub-indexes, and [OkfConfig.adrReadmeLink] (`adr_readme_link`) the README link of the ADR index;
+     * [OkfConfig.extraTypes] (`extra_types`) extends the `type` taxonomy; [OkfConfig.hubRepo] (`hub_repo`) must be
+     * set for a Satellite Note to be valid; a Feature Record's `repos` entries must be in
      * [OkfConfig.externalRepos] (`external_repos`); non-empty
      * [OkfConfig.satellites] (`satellites`, hub only) makes the bundle-root index.md carry a fresh "Repos" section
      * ([OkfIndexRenderer.replaceReposBlock]). The generated sub-indexes are checked only for the sub-directories
@@ -144,7 +145,7 @@ object OkfChecker {
         // A sub-index is optional: required (and kept fresh) only when its directory exists.
         if (root.resolve(OkfIndexRenderer.ADR_DIR).isDirectory) {
             problems += checkGeneratedIndex(root, OkfIndexRenderer.ADR_DIR, config.indexCommand) {
-                OkfIndexRenderer.renderAdrIndex(it, config.indexCommand, config.indexLanguage)
+                OkfIndexRenderer.renderAdrIndex(it, config.indexCommand, config.indexLanguage, config.adrReadmeLink)
             }
         }
         if (root.resolve(OkfIndexRenderer.FEATURES_DIR).isDirectory) {

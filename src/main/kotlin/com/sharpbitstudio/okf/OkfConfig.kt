@@ -21,6 +21,18 @@ enum class IndexLanguage(val value: String) {
 }
 
 /**
+ * Whether the intro of the generated `adr/index.md` ends with a link to `adr/README.md` (`adr_readme_link`,
+ * [OkfIndexRenderer.renderAdrIndex]); [value] is the `okf.yaml` spelling.
+ */
+enum class AdrReadmeLink(val value: String) {
+    /** Always link, whether or not the file exists. */
+    ALWAYS("always"),
+
+    /** Link only when `adr/README.md` exists (the name matched exactly). */
+    AUTO("auto"),
+}
+
+/**
  * One satellite repository listed in the hub's `satellites` ([OkfConfig.satellites]): the hub's
  * `docs/index.md` links to its bundle ("Repos" section, [OkfIndexRenderer.renderReposBlock]) and
  * `okf xcheck` checks it together with the hub.
@@ -62,7 +74,9 @@ data class OkfConfig(
      */
     val satellites: List<Satellite> = emptyList(),
     /** Language of the fixed text of the generated `adr/index.md` and `features/index.md` (`index_language`). */
-    val indexLanguage: IndexLanguage = IndexLanguage.SR,
+    val indexLanguage: IndexLanguage = DEFAULT_INDEX_LANGUAGE,
+    /** Whether the generated `adr/index.md` links `adr/README.md` (`adr_readme_link`). */
+    val adrReadmeLink: AdrReadmeLink = DEFAULT_ADR_README_LINK,
     /**
      * The branch `okf impact` compares against when `--base` is absent (`base_ref`): the merge-base with
      * `origin/<baseRef>`, or with `<baseRef>` when that remote-tracking ref does not exist.
@@ -80,14 +94,16 @@ data class OkfConfig(
         const val FILE_NAME = "okf.yaml"
         const val SCHEMA_VERSION = 1
         const val DEFAULT_DOCS_ROOT = "docs"
-        const val DEFAULT_INDEX_COMMAND = "./gradlew okfIndex"
+        const val DEFAULT_INDEX_COMMAND = "okf index"
+        val DEFAULT_INDEX_LANGUAGE = IndexLanguage.EN
+        val DEFAULT_ADR_README_LINK = AdrReadmeLink.AUTO
         const val DEFAULT_BASE_REF = "main"
         const val DEFAULT_DRIFT_DAYS = 14
         const val MAX_DRIFT_DAYS = 3650
 
         private val KEYS = setOf(
             "schema_version", "repo", "docs_root", "index_command", "external_repos", "ref_extensions", "source_roots", "hub_repo",
-            "satellites", "index_language", "base_ref", "extra_types", "drift_days",
+            "satellites", "index_language", "adr_readme_link", "base_ref", "extra_types", "drift_days",
         )
         private val SATELLITE_KEYS = listOf("repo", "description", "index")
 
@@ -147,6 +163,7 @@ data class OkfConfig(
             }
             val satellites = satellites(data, repo, externalRepos.toSet(), hubRepo)
             val indexLanguage = indexLanguage(data)
+            val adrReadmeLink = adrReadmeLink(data)
             val baseRef = string(data, "base_ref")?.also(::baseRef) ?: DEFAULT_BASE_REF
             val extraTypes = strings(data, "extra_types").onEach(::extraType)
             val driftDays = driftDays(data, satellites)
@@ -160,6 +177,7 @@ data class OkfConfig(
                 hubRepo = hubRepo,
                 satellites = satellites,
                 indexLanguage = indexLanguage,
+                adrReadmeLink = adrReadmeLink,
                 baseRef = baseRef,
                 extraTypes = extraTypes.distinct(),
                 driftDays = driftDays,
@@ -210,12 +228,20 @@ data class OkfConfig(
             return value
         }
 
-        /** `index_language`: exactly one of the [IndexLanguage] values (case-sensitive), [IndexLanguage.SR] when absent. */
+        /** `index_language`: exactly one of the [IndexLanguage] values (case-sensitive), [DEFAULT_INDEX_LANGUAGE] when absent. */
         private fun indexLanguage(data: Map<*, *>): IndexLanguage {
-            if (!data.containsKey("index_language")) return IndexLanguage.SR
+            if (!data.containsKey("index_language")) return DEFAULT_INDEX_LANGUAGE
             val value = data["index_language"]
             return IndexLanguage.entries.firstOrNull { it.value == value }
                 ?: throw OkfConfigException("$FILE_NAME: index_language '$value' must be one of ${IndexLanguage.entries.map { it.value }}")
+        }
+
+        /** `adr_readme_link`: exactly one of the [AdrReadmeLink] values (case-sensitive), [DEFAULT_ADR_README_LINK] when absent. */
+        private fun adrReadmeLink(data: Map<*, *>): AdrReadmeLink {
+            if (!data.containsKey("adr_readme_link")) return DEFAULT_ADR_README_LINK
+            val value = data["adr_readme_link"]
+            return AdrReadmeLink.entries.firstOrNull { it.value == value }
+                ?: throw OkfConfigException("$FILE_NAME: adr_readme_link '$value' must be one of ${AdrReadmeLink.entries.map { it.value }}")
         }
 
         /**

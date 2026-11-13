@@ -96,7 +96,7 @@ class OkfCodePathsTest {
         bundle.resolve("adr/ADR-003-c.md").writeText("---\n${adr}status: draft\nadr_status: Proposed\n---\n# C\n")
         bundle.resolve("features/f.md").writeText("---\ntype: Feature Record\n---\n# F\n")
         bundle.resolve("guide.md").writeText("---\ntype: Guide\n---\n# G\n")
-        bundle.resolve("adr/index.md").writeText(OkfIndexRenderer.renderAdrIndex(bundle.resolve("adr"), TestConfigs.INDEX_COMMAND, IndexLanguage.SR))
+        bundle.resolve("adr/index.md").writeText(OkfIndexRenderer.renderAdrIndex(bundle.resolve("adr"), TestConfigs.INDEX_COMMAND, IndexLanguage.SR, TestConfigs.SR.adrReadmeLink))
         bundle.resolve("features/index.md").writeText(OkfIndexRenderer.renderFeaturesIndex(bundle.resolve("features"), TestConfigs.INDEX_COMMAND, IndexLanguage.SR))
         val refs = OkfRefChecker(index, "docs")
 

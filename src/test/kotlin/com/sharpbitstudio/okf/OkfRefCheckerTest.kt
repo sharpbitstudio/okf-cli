@@ -293,7 +293,7 @@ class OkfRefCheckerTest {
         root.resolve("guide.md").writeText("---\ntype: Guide\n---\n# G\n\n`Gone.java`\n")
         root.resolve("log.md").writeText("# Log\n\n`Gone2.java`\n")
         root.resolve("notes.md").writeText("# Unmigrated\n\n`Gone3.java`\n")
-        root.resolve("adr/index.md").writeText(OkfIndexRenderer.renderAdrIndex(root.resolve("adr"), TestConfigs.INDEX_COMMAND, IndexLanguage.SR))
+        root.resolve("adr/index.md").writeText(OkfIndexRenderer.renderAdrIndex(root.resolve("adr"), TestConfigs.INDEX_COMMAND, IndexLanguage.SR, TestConfigs.SR.adrReadmeLink))
         root.resolve("features/index.md").writeText(OkfIndexRenderer.renderFeaturesIndex(root.resolve("features"), TestConfigs.INDEX_COMMAND, IndexLanguage.SR))
         val now = Instant.parse("2026-09-25T00:00:00Z")
 

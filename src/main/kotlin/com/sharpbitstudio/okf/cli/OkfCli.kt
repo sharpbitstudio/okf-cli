@@ -108,7 +108,7 @@ class OkfCli(
      */
     private fun index(bundle: File, config: OkfConfig): Int {
         val renderers = listOf<Pair<String, (File, String) -> String>>(
-            OkfIndexRenderer.ADR_DIR to { dir, command -> OkfIndexRenderer.renderAdrIndex(dir, command, config.indexLanguage) },
+            OkfIndexRenderer.ADR_DIR to { dir, command -> OkfIndexRenderer.renderAdrIndex(dir, command, config.indexLanguage, config.adrReadmeLink) },
             OkfIndexRenderer.FEATURES_DIR to { dir, command -> OkfIndexRenderer.renderFeaturesIndex(dir, command, config.indexLanguage) },
         )
         // Render all before writing any, so broken frontmatter leaves the indexes untouched.
