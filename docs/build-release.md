@@ -1,9 +1,9 @@
 ---
 type: Guide
 title: "Build, CI and release"
-description: "How okf-cli is built and tested (bytecode 17 on JDK 25, the three jars and the licence files inside them), what CI runs, how a GitHub release gets its jar, checksum and build-provenance attestation, how this repo checks its own docs bundle, and where the third-party licences live."
+description: "How okf-cli is built and tested (bytecode 17 on JDK 25, the three jars and the licence files inside them), what CI runs, how a GitHub release gets its jar, checksum and build-provenance attestation, how this repo checks its own docs bundle, how dependency updates are handled, and where the third-party licences live."
 tags: [build, ci, release, attestation, licences]
-code_paths: ["build.gradle.kts", "gradle.properties", "gradle/libs.versions.toml", ".github/workflows/**", "src/main/resources/com/sharpbitstudio/okf/version.properties", "LICENSE", "NOTICE", "third-party-licenses/**"]
+code_paths: ["build.gradle.kts", "gradle.properties", "gradle/libs.versions.toml", ".github/workflows/**", ".github/dependabot.yml", "src/main/resources/com/sharpbitstudio/okf/version.properties", "LICENSE", "NOTICE", "third-party-licenses/**"]
 ---
 # Build, CI and release
 
@@ -151,10 +151,33 @@ Each `-Pokf.*` property that is set becomes one `--<option>=<value>` (an empty v
 `-Pokf.base=` skips the impact check).
 
 [reference.md](reference.md) carries `code_paths` on `src/main/kotlin/com/sharpbitstudio/okf/**`, and this
-document on the build, the workflows and the licence files. A change there therefore fails `okfImpact` on a
-branch until the matching document is updated, or until the change is acknowledged with a commit trailer naming
-it: `Docs-Impact: reference — <reason>` for a Kotlin change, `Docs-Impact: build-release — <reason>` for a change
-to the build, the workflows or the licence files.
+document on the build, the workflows, the Dependabot configuration and the licence files. A change there therefore
+fails `okfImpact` on a branch until the matching document is updated, or until the change is acknowledged with a
+commit trailer naming it: `Docs-Impact: reference — <reason>` for a Kotlin change,
+`Docs-Impact: build-release — <reason>` for a change to the build, the workflows, the Dependabot configuration or
+the licence files.
+
+## Dependency updates
+
+Dependabot (`.github/dependabot.yml`) opens version-update pull requests every Monday, at most five open per
+ecosystem: one per Gradle dependency, and one for all GitHub Actions together. Security updates, opened when GitHub
+reports a vulnerable version, come outside that schedule, limit and group, and follow the same rules. Dependabot's
+branches run the same CI as any other branch (see [CI](#ci)), with impact findings as warnings.
+
+- A bump of a GitHub Action, the Gradle wrapper or a test-only dependency (JUnit) is merged once CI is green; none
+  of them is part of the released jar, so it gets no `CHANGELOG.md` entry. The GitHub Actions pull request changes
+  the workflow files, so it is not merged while a release run is in flight (see [Release](#release)). CI does not
+  run the actions that only `.github/workflows/release.yml` uses (`actions/download-artifact`, `actions/attest`):
+  read the release notes of such a bump before merging it.
+- A bump of a runtime dependency is not merged as is: SnakeYAML, the Kotlin stdlib (Dependabot names that bump
+  after the Kotlin Gradle plugin, `org.jetbrains.kotlin.jvm`, whose version the stdlib follows), or what they pull
+  in. Dependabot cannot update `third-party-licenses/`, `NOTICE` and `CHANGELOG.md`, so a branch of this repo
+  makes the same bump together with those files (see [Third-party licences](#third-party-licences)). That branch
+  changes files this document covers, so its commit carries a `Docs-Impact: build-release — <reason>` trailer
+  unless it also updates this document. Once it is merged, Dependabot closes its pull request.
+- Dependabot pull requests are merged between other pull requests, never while one of those is open: merging moves
+  `main`, which accepts a branch only when it is up to date, so every open branch then has to be rebased (a
+  Dependabot branch by commenting `@dependabot rebase` on its pull request).
 
 ## Third-party licences
 

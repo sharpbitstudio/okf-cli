@@ -1,19 +1,22 @@
 version: 2
 
-# open-pull-requests-limit: 0 holds version-update PRs for now.
+# How these pull requests are handled: docs/build-release.md, "Dependency updates".
 updates:
-  # Gradle dependencies (Kotlin, SnakeYAML, JUnit) and the Gradle wrapper.
+  # Gradle dependencies (the Kotlin plugin, which sets the stdlib version; SnakeYAML; JUnit) and the Gradle wrapper.
   - package-ecosystem: gradle
     directory: /
     schedule:
       interval: weekly
       day: monday
-    open-pull-requests-limit: 0
+    open-pull-requests-limit: 5
 
-  # GitHub Actions used in .github/workflows/*.yml.
+  # GitHub Actions used in .github/workflows/*.yml, all in one pull request.
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
       day: monday
-    open-pull-requests-limit: 0
+    open-pull-requests-limit: 5
+    groups:
+      github-actions:
+        patterns: ["*"]
