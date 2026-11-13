@@ -243,8 +243,122 @@ class OkfConfigTest {
         )
     }
 
+    @Test
+    fun `base_ref names a branch, main when absent`() {
+        val head = "schema_version: 1\nrepo: r\n"
+        assertEquals("main", OkfConfig.parse(head).baseRef)
+        for ((yaml, expected) in listOf(
+            "main" to "main",
+            "develop" to "develop",
+            "release/1.x" to "release/1.x",
+            "feature_x" to "feature_x",
+            "\"1.x\"" to "1.x",
+            "\" develop \"" to "develop",
+            "overhead" to "overhead",
+            "feature/x_head" to "feature/x_head",
+        )) {
+            assertEquals(expected, OkfConfig.parse(head + "base_ref: $yaml\n").baseRef, yaml)
+        }
+    }
+
+    @Test
+    fun `base_ref is rejected unless it is a plain branch name`() {
+        val head = "schema_version: 1\nrepo: r\n"
+        fun branchName(shown: String) =
+            "okf.yaml: base_ref '$shown' must be a branch name: parts of ASCII letters, digits, `.`, `_` or `-` joined by `/`, " +
+                "each starting with a letter, digit or `_` and not ending with `.` or `.lock`, without `..`"
+        for (value in listOf(
+            "-x", "--upload-pack=x", "a..b", "a b", "main~1", "main^", "a:b", "/main", "main/", "a//b", ".hidden", "a/.b",
+            "main.lock", "main.", "@", "a@{1}", "mäin", "a.lock/b", "a./b",
+        )) {
+            assertEquals(branchName(value), configError(head + "base_ref: \"$value\"\n"), value)
+        }
+        // A control character is shown escaped.
+        assertEquals(branchName("ma\\u0009in"), configError(head + "base_ref: \"ma\\tin\"\n"))
+        for (value in listOf("HEAD", "head", "FETCH_HEAD", "orig_head", "release_head")) {
+            assertEquals(
+                "okf.yaml: base_ref '$value' must be a branch name, not `HEAD` or a name without `/` ending in `_HEAD` " +
+                    "(git reserves those, such as `FETCH_HEAD`; compared ignoring case)",
+                configError(head + "base_ref: $value\n"),
+                value,
+            )
+        }
+        assertEquals("okf.yaml: `base_ref` must be a non-empty string, got '[main]'", configError(head + "base_ref: [main]\n"))
+        assertEquals("okf.yaml: `base_ref` must be a non-empty string, got '1'", configError(head + "base_ref: 1\n"))
+        assertEquals("okf.yaml: `base_ref` must be a non-empty string, got 'true'", configError(head + "base_ref: on\n"))
+    }
+
+    @Test
+    fun `extra_types adds one-line names, a repeat counts once`() {
+        val head = "schema_version: 1\nrepo: r\n"
+        assertEquals(emptyList<String>(), OkfConfig.parse(head).extraTypes)
+        assertEquals(listOf("Runbook", "Meeting Notes"), OkfConfig.parse(head + "extra_types: [Runbook, \"Meeting Notes\", Runbook]\n").extraTypes)
+    }
+
+    @Test
+    fun `extra_types is rejected unless it is a list of one-line names that are not built-in types`() {
+        val head = "schema_version: 1\nrepo: r\n"
+        assertEquals("okf.yaml: `extra_types` must be a YAML list of strings, got 'Runbook'", configError(head + "extra_types: Runbook\n"))
+        assertEquals("okf.yaml: extra_types[0] must be a non-empty string, got '3'", configError(head + "extra_types: [3]\n"))
+        assertEquals("okf.yaml: extra_types[0] must be a non-empty string, got ''", configError(head + "extra_types: [\"\"]\n"))
+        assertEquals(
+            "okf.yaml: extra_types entry 'a\\u000ab' must be one line (no control characters)",
+            configError(head + "extra_types: [\"a\\nb\"]\n"),
+        )
+        assertEquals(
+            "okf.yaml: extra_types entry 'ADR' is already the built-in type 'ADR' (compared ignoring case)",
+            configError(head + "extra_types: [ADR]\n"),
+        )
+        assertEquals(
+            "okf.yaml: extra_types entry 'adr' is already the built-in type 'ADR' (compared ignoring case)",
+            configError(head + "extra_types: [adr]\n"),
+        )
+        assertEquals(
+            "okf.yaml: extra_types entry 'feature record' is already the built-in type 'Feature Record' (compared ignoring case)",
+            configError(head + "extra_types: [\"feature record\"]\n"),
+        )
+    }
+
+    @Test
+    fun `drift_days is an integer from 1 to 3650 in the hub, 14 when absent`() {
+        assertEquals(14, OkfConfig.parse(HUB_HEAD).driftDays)
+        for (days in listOf(1, 14, 3650)) assertEquals(days, OkfConfig.parse(HUB_HEAD + "drift_days: $days\n").driftDays)
+        for ((yaml, shown) in listOf(
+            "0" to "0",
+            "-1" to "-1",
+            "3651" to "3651",
+            "\"14\"" to "14",
+            "14.5" to "14.5",
+            "true" to "true",
+            "" to "null",
+            "3000000000" to "3000000000",
+        )) {
+            assertEquals(
+                "okf.yaml: `drift_days` must be an integer from 1 to 3650, got '$shown'",
+                configError(HUB_HEAD + "drift_days: $yaml\n"),
+                yaml,
+            )
+        }
+    }
+
+    @Test
+    fun `drift_days is only allowed in a repo with a non-empty satellites, checked before the value`() {
+        val hubOnly = "okf.yaml: `drift_days` is only allowed in the hub (a repo with a non-empty `satellites`)"
+        assertEquals(hubOnly, configError("schema_version: 1\nrepo: r\ndrift_days: 14\n"))
+        assertEquals(hubOnly, configError("schema_version: 1\nrepo: r\nsatellites: []\ndrift_days: 14\n"))
+        assertEquals(hubOnly, configError("schema_version: 1\nrepo: r\nexternal_repos: [hub]\nhub_repo: hub\ndrift_days: 14\n"))
+        assertEquals(hubOnly, configError("schema_version: 1\nrepo: r\ndrift_days: nope\n"))
+    }
+
+    private fun configError(yaml: String): String = assertThrows<OkfConfigException> { OkfConfig.parse(yaml) }.message!!
+
     private fun assertError(yaml: String, fragment: String) {
         val e = assertThrows<OkfConfigException> { OkfConfig.parse(yaml) }
         assertTrue(fragment in e.message!!, "expected <$fragment> in <${e.message}>")
+    }
+
+    private companion object {
+        const val HUB_HEAD = "schema_version: 1\nrepo: hub\nexternal_repos: [sat]\n" +
+            "satellites: [{repo: sat, description: d, index: \"https://x/docs/index.md\"}]\n"
     }
 }

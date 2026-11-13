@@ -38,7 +38,7 @@ sealed interface Frontmatter {
 }
 
 object OkfFrontmatter {
-    /** Closed `type` taxonomy for this bundle. */
+    /** The built-in `type` taxonomy; a repo adds names without rules of their own through `extra_types` ([OkfConfig]). */
     val TYPES = setOf("ADR", "Feature Record", "Plan", "Guide", "Risk Register", "Convention", "Product Spec", "Satellite Note")
 
     /** Reserved OKF file names — never carry document frontmatter (except the bundle-root index.md). */

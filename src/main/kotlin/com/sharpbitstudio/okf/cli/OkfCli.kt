@@ -69,7 +69,7 @@ class OkfCli(
             when (parsed.command) {
                 Command.INDEX -> index(bundle, config)
                 Command.CHECK -> check(parsed, bundle, config)
-                Command.IMPACT -> impact(parsed, bundle)
+                Command.IMPACT -> impact(parsed, bundle, config)
                 Command.XCHECK -> xcheck(parsed, config)
                 Command.VERSION -> error("handled above")
             }
@@ -184,12 +184,13 @@ class OkfCli(
     }
 
     /**
-     * Lists the documents whose `code_paths` match code changed since the merge-base with `--base`, and
-     * whether each was updated or acknowledged by a `Docs-Impact:` trailer ([OkfImpact] has the coverage
-     * rules). Changed = `git diff <merge-base>` (work tree, so uncommitted edits count locally) plus
-     * untracked files; trailers come from the commits in `<merge-base>..HEAD`.
+     * Lists the documents whose `code_paths` match code changed since the merge-base with `--base` (absent:
+     * `origin/<base_ref>`, fallback `<base_ref>`, [OkfConfig.baseRef]), and whether each was updated or
+     * acknowledged by a `Docs-Impact:` trailer ([OkfImpact] has the coverage rules). Changed =
+     * `git diff <merge-base>` (work tree, so uncommitted edits count locally) plus untracked files; trailers
+     * come from the commits in `<merge-base>..HEAD`.
      */
-    private fun impact(args: CliArgs, bundle: File): Int {
+    private fun impact(args: CliArgs, bundle: File, config: OkfConfig): Int {
         val repo = args.repo
         val bundlePath = bundle.relativeTo(repo).invariantSeparatorsPath
         val strict = args.impactStrict
@@ -199,7 +200,7 @@ class OkfCli(
             out.println("okfImpact skipped: no base to compare against (${CliArgs.BASE}='$requested').")
             return EXIT_OK
         }
-        val candidates = if (requested == null) DEFAULT_BASES else listOf(requested.trim())
+        val candidates = if (requested == null) listOf("origin/${config.baseRef}", config.baseRef) else listOf(requested.trim())
         val baseRef = candidates.firstOrNull { OkfGit.resolveCommit(repo, it) != null }
             ?: return impactUnavailable(strict, "base ${candidates.joinToString(" / ") { "'$it'" }} not found — fetch it or pass ${CliArgs.BASE}=<ref>")
         val mergeBase = OkfGit.mergeBase(repo, baseRef)
@@ -331,7 +332,6 @@ class OkfCli(
 
         private const val IMPACT_TITLE = "OKF docs impact"
         private val HELP_FLAGS = setOf("--help", "-h")
-        private val DEFAULT_BASES = listOf("origin/main", "main")
         private val ZERO_SHA = Regex("0+")
         private val FULL_SHA = Regex("[0-9a-f]{40}", RegexOption.IGNORE_CASE)
 
@@ -356,8 +356,9 @@ class OkfCli(
             |  --refs-strict               broken code references are failures                           [check]
             |  --code-paths-required       Accepted/Resolved ADRs, Feature Records and Satellite Notes    [check]
             |                              need code_paths
-            |  --base=<ref>                compare against merge-base with <ref> (default origin/main,
-            |                              fallback main; empty or all-zero SHA = skip)                   [impact]
+            |  --base=<ref>                compare against merge-base with <ref> (default
+            |                              origin/<base_ref>, fallback <base_ref>; base_ref in okf.yaml
+            |                              defaults to main; empty or all-zero SHA = skip)                [impact]
             |  --impact-strict             impact findings are failures                                   [impact]
             |  --workspace=<dir>           directory holding every satellite checkout as <dir>/<repo>    [xcheck, required]
             |  --report=<file>             Markdown report, written when there are findings and deleted  [xcheck]

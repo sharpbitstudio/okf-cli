@@ -35,8 +35,9 @@ okf <index|check|impact|xcheck|version> [options]      (--help / -h anywhere: pr
   --refs-strict            broken code references are failures                          [check]
   --code-paths-required    Accepted/Resolved ADRs, Feature Records and Satellite Notes   [check]
                            need code_paths
-  --base=<ref>             merge-base with <ref>; absent = origin/main, fallback main;
-                           empty or an all-zero SHA = skip the check                     [impact]
+  --base=<ref>             merge-base with <ref>; absent = origin/<base_ref>, fallback   [impact]
+                           <base_ref> (base_ref in okf.yaml, default main); empty or an
+                           all-zero SHA = skip the check
   --impact-strict          impact findings are failures                                  [impact]
   --workspace=<dir>        directory holding every satellite checkout as <dir>/<repo>    [xcheck, required]
   --report=<file>          Markdown report, written when there are findings and deleted  [xcheck]
@@ -78,6 +79,9 @@ missing file or an unsupported `schema_version` is an error (exit `2`).
 | `hub_repo` | no | — | the hub repository holding the Feature Records that `Satellite Note`s point to; a repository name that must also be in `external_repos` and differ from `repo`. Required for any `Satellite Note` in the repo; absent in the hub itself |
 | `satellites` | no | `[]` | hub only (not allowed together with `hub_repo`): the satellite repositories, a list of mappings with exactly `repo` (a repository name from `external_repos`, not this repo, listed once; no `/`, `\`, `.` or `..`), `description` (one line) and `index` (an `https://` URL with a host, as `java.net.URI` parses it, of the satellite's bundle-root `index.md`; one line, no whitespace and none of `(`, `)`, `<`, `>`, since it becomes a Markdown link target). Order is kept. Turns on the "Repos" section of `<docs_root>/index.md` and `okf xcheck` |
 | `index_language` | no | `sr` | language of the fixed text of the generated `<docs_root>/adr/index.md` and `<docs_root>/features/index.md` (`sr` or `en`, case-sensitive): the ADR index title and intro, the "not migrated" section and its entries, the amended suffix; the marker line, status headings, entry format and the Repos section are the same in both |
+| `base_ref` | no | `main` | the branch `okf impact` compares against when `--base` is absent: the merge-base with `origin/<base_ref>`, or with `<base_ref>` when that remote-tracking ref does not exist (resolved as `git rev-parse` resolves it, so a tag or a commit of that spelling also matches). A branch name without the remote: parts of ASCII letters, digits, `.`, `_` or `-` joined by `/`, each starting with a letter, digit or `_` and not ending with `.` or `.lock`, without `..`; not `HEAD` or a name without `/` ending in `_HEAD` (git reserves those, such as `FETCH_HEAD` and `ORIG_HEAD`), compared ignoring case; quote a name that YAML would read as a number, a boolean, a date or null |
+| `extra_types` | no | `[]` | document types added to the built-in ones ([Bundle rules](#bundle-rules)): a list of one-line names. An added type has no rules of its own (it is not an ADR, a Feature Record or a Satellite Note). A name equal to a built-in type, ignoring case, is an error; a repeated name counts once. The built-in types do not change within a major version, so an added name never collides later |
+| `drift_days` | no | `14` | hub only (an error in a repo without a non-empty `satellites`): after how many days, `1` to `3650`, `okf xcheck` reports drift between a Satellite Note and its hub record (check (d)). Write a plain decimal number, unquoted (YAML 1.1 reads forms such as a leading `0` as octal) |
 
 The defaults of `index_command` and `index_language` change to generic ones before 1.0.0; set both explicitly.
 
@@ -114,8 +118,9 @@ satellites:
 What the tool enforces beyond the frontmatter of single documents (how those rules relate to the OKF spec is
 summarised in the [README](../README.md)):
 
-- **Document types** (`type`, closed taxonomy): `ADR`, `Feature Record`, `Plan`, `Guide`, `Risk Register`,
-  `Convention`, `Product Spec`, `Satellite Note`.
+- **Document types** (`type`): the built-in types `ADR`, `Feature Record`, `Plan`, `Guide`, `Risk Register`,
+  `Convention`, `Product Spec`, `Satellite Note`, plus the names in `extra_types`. Only the built-in `ADR`,
+  `Feature Record` and `Satellite Note` carry rules of their own.
 - **`Satellite Note`**: a note in a sibling repo that belongs to a feature whose record lives in the hub.
   `hub: features/<slug>` is required (slug: lowercase letters and digits, words joined by single hyphens,
   e.g. `hub: features/checkout`) and names the hub's Feature Record in the `Docs-Impact:` ID form.
@@ -174,7 +179,8 @@ The checks (failures exit `1`, warnings alone exit `0`):
   at least one Satellite Note whose `hub:` names that record, and the record of every Satellite Note (when it exists)
   must list the note's repo in `repos:`.
 - **(d) Drift (warning).** For every Satellite Note and its hub record, the last commit time of each file is compared
-  (committer time, `git log -1 --format=%ct`). A note committed more than 14 days after its record is reported:
+  (committer time, `git log -1 --format=%ct`). A note committed more than `drift_days` days (14 unless the hub's
+  `okf.yaml` sets it) after its record is reported:
   `hub record <path> is N days older than <repo>/<note> — distill the satellite changes into the record`. A
   shallow clone anywhere in the federation is a failure (`xcheck needs full history: fetch-depth: 0`).
 - **(e) Satellite index URL.** Every `satellites[].index` must end with `/<docs_root>/index.md`, the `docs_root` taken

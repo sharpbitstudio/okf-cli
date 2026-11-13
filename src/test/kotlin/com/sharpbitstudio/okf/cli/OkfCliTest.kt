@@ -113,6 +113,51 @@ class OkfCliTest {
     }
 
     @Test
+    fun `impact - base_ref names the default base, --base overrides it`() {
+        write("okf.yaml", "schema_version: 1\nrepo: test-repo\nindex_command: tool/run-okf.sh index\nexternal_repos: [sibling-repo]\nbase_ref: develop\n")
+        run("index", "--repo=${repo.path}")
+        commit("base")
+        git("branch", "develop")
+        git("checkout", "-q", "-b", "feature/x")
+        write("src/main/kotlin/app/App.kt", "package app\n\nfun x() = 1\n")
+        commit("change app")
+        val summary = "; 1 documents with code_paths, 1 impacted (0 updated, 0 acknowledged, 1 NOT UPDATED)."
+
+        val local = run("impact", "--repo=${repo.path}")
+        assertEquals(0, local.code, local.toString())
+        assertTrue(local.out.trim().endsWith("with develop$summary"), local.out)
+
+        git("update-ref", "refs/remotes/origin/develop", git("rev-parse", "develop").trim())
+        val remote = run("impact", "--repo=${repo.path}")
+        assertEquals(0, remote.code, remote.toString())
+        assertTrue(remote.out.trim().endsWith("with origin/develop$summary"), remote.out)
+
+        val overridden = run("impact", "--repo=${repo.path}", "--base=main")
+        assertEquals(0, overridden.code, overridden.toString())
+        assertTrue(overridden.out.trim().endsWith("with main$summary"), overridden.out)
+
+        val skipped = run("impact", "--repo=${repo.path}", "--base=", "--impact-strict")
+        assertEquals(0, skipped.code, skipped.toString())
+        assertEquals("okfImpact skipped: no base to compare against (--base='').", skipped.out.trim())
+    }
+
+    @Test
+    fun `impact - a base_ref that does not resolve names both candidates`() {
+        write("okf.yaml", "schema_version: 1\nrepo: test-repo\nindex_command: tool/run-okf.sh index\nexternal_repos: [sibling-repo]\nbase_ref: nope\n")
+        commit("base")
+        val lenient = run("impact", "--repo=${repo.path}")
+        assertEquals(0, lenient.code, lenient.toString())
+        assertEquals(
+            "OKF IMPACT WARNING: base 'origin/nope' / 'nope' not found — fetch it or pass --base=<ref> — impact check skipped.",
+            lenient.err.trim(),
+        )
+
+        val strict = run("impact", "--repo=${repo.path}", "--impact-strict")
+        assertEquals(1, strict.code, strict.toString())
+        assertEquals("okfImpact: base 'origin/nope' / 'nope' not found — fetch it or pass --base=<ref>", strict.err.trim())
+    }
+
+    @Test
     fun `impact - covered code changed without touching the doc is a finding`() {
         run("index", "--repo=${repo.path}")
         commit("base")
