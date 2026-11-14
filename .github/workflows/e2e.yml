@@ -26,7 +26,8 @@ permissions:
 # The launcher (launcher/okfw, launcher/okfw.cmd; docs/launcher.md) on the three runner systems: the whole test suite
 # (the hermetic launcher tests run the script under each system's sh: dash, macOS /bin/sh, Git for Windows' sh.exe,
 # and okfw.cmd under cmd and PowerShell on Windows) plus `networkTest`, which downloads the published
-# 1.0.0-alpha.1 with real curl. These jobs are not required checks.
+# 1.0.0-alpha.1 with real curl and runs okfw --verify / --update against it with the runner's gh (on GitHub Actions a
+# missing gh or one older than the launcher's floor fails those cases). These jobs are not required checks.
 jobs:
   launcher:
     # A PR from a branch of this repo is covered by that branch's push run, so its pull_request job is skipped (see

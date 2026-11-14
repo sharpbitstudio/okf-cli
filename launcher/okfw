@@ -3,18 +3,29 @@
 #
 # Runs the okf-cli version pinned in okf-wrapper.properties next to this file: downloads the release jar once into
 # a per-user cache, checks its SHA-256 against the pin before every run, and runs it with Java 17 or later. All
-# arguments go to okf-cli unchanged. Docs: https://github.com/sharpbitstudio/okf-cli/blob/main/docs/launcher.md
+# arguments go to okf-cli unchanged. `okfw --update <version>` pins a release after checking its build provenance with
+# the GitHub CLI; `okfw --verify` checks the pinned one. Docs:
+# https://github.com/sharpbitstudio/okf-cli/blob/main/docs/launcher.md
 #
 # Written by `okf wrapper` (and `okf init`); refresh it with `okf wrapper` rather than editing it. The whole script is
 # one function, called on the last line, so the file can be replaced while it runs.
 
 main() {
   okfw_tmp=
+  okfw_tmp_bundle=
+  okfw_tmp_pin=
+  okfw_tmp_gh=
+  okfw_progress=
   trap okfw_cleanup EXIT
   trap 'exit 129' HUP
   trap 'exit 130' INT
   trap 'exit 143' TERM
   okfw_dash=$(printf '\342\200\224')
+  okfw_tab=$(printf '\t')
+  okfw_cr=$(printf '\r')
+  # Never empty: an empty pattern would match every line end in okfw_read_pin (an endless loop) and every value in
+  # okfw_printable. A tab in its place is harmless there (trailing tabs are ignored; a tab is not printable).
+  [ -n "$okfw_cr" ] || okfw_cr=$okfw_tab
   # The shell itself works byte by byte: in a UTF-8 locale, bash's read would take a byte such as 0xE9 in the pin as the
   # start of a character and swallow the line end after it. The caller's LC_ALL is restored before Java starts; tools
   # that must not depend on the locale get LC_ALL=C for their own call.
@@ -23,53 +34,114 @@ main() {
   LC_ALL=C
 
   case ${1-} in
-    --update | --verify) okfw_fail 2 '--update and --verify are not available in this launcher revision' ;;
+    --update)
+      shift
+      okfw_update "$@"
+      ;;
+    --verify)
+      shift
+      okfw_verify "$@"
+      ;;
   esac
 
   okfw_pin=${OKFW_PIN:-$(dirname "$0")/okf-wrapper.properties}
   [ -f "$okfw_pin" ] || okfw_fail 2 "pin file not found: $okfw_pin $okfw_dash run okfw --update <version>"
   okfw_read_pin "$okfw_pin"
-
-  if command -v sha256sum > /dev/null 2>&1; then
-    okfw_sha_tool=sha256sum
-  elif command -v shasum > /dev/null 2>&1; then
-    okfw_sha_tool=shasum
-  else
-    okfw_fail 3 'no SHA-256 tool found (sha256sum or shasum)'
-  fi
-
+  okfw_find_sha_tool
   okfw_find_java
-
-  if [ -n "${OKFW_CACHE_DIR-}" ]; then
-    okfw_cache=$OKFW_CACHE_DIR
-  elif [ -n "${XDG_CACHE_HOME-}" ]; then
-    okfw_cache=$XDG_CACHE_HOME
-  elif [ -n "${HOME-}" ]; then
-    okfw_cache=$HOME/.cache
-  else
-    okfw_fail 3 'no cache directory: set OKFW_CACHE_DIR, XDG_CACHE_HOME or HOME'
-  fi
-  okfw_cache=$okfw_cache/okf-cli/$okfw_version
-  okfw_name=okf-cli-$okfw_version-all.jar
-  okfw_jar=$okfw_cache/$okfw_name
-  if [ -f "$okfw_jar" ]; then
-    # A cached jar that does not match the pin is replaced by a fresh download.
-    okfw_have=$(okfw_hash_file "$okfw_jar") || exit 3
-    if [ "$okfw_have" != "$okfw_sha256" ]; then
-      rm -f "$okfw_jar" || okfw_fail 3 "cannot replace the cached jar $okfw_jar"
-      okfw_download
-    fi
-  else
-    okfw_download
-  fi
+  okfw_find_cache
+  okfw_cached_jar
 
   trap - EXIT HUP INT TERM
-  if [ -n "$okfw_lc_all_set" ]; then
-    LC_ALL=$okfw_lc_all
-  else
-    unset LC_ALL
-  fi
+  okfw_restore_lc_all
   exec "$okfw_java" -jar "$okfw_jar" "$@"
+}
+
+# The provenance policy of --update and --verify (docs/launcher.md): the oldest GitHub CLI accepted, and where a
+# release jar must have been built. gh 2.102.0 fixed GHSA-4mq3-hpgx-9cx8 (--source-ref compared case-insensitively) and
+# GHSA-wjmr-j3rp-mh2g (--signer-workflow matched as a prefix); 2.97.0 fixed GHSA-mm27-mwq9-fr5g (regex metacharacters in
+# SAN matching).
+okfw_gh_floor=2.102.0
+okfw_repo=sharpbitstudio/okf-cli
+okfw_workflow=.github/workflows/release.yml
+okfw_source_ref=refs/heads/main
+
+# okfw --update <version>: downloads that release's jar and its Sigstore bundle, checks the build provenance with gh
+# and that the verified jar reports the version, then writes the pin next to this script and refreshes the launcher
+# files with that jar's `okf wrapper`. A failure before the pin is written leaves the pin as it was.
+okfw_update() {
+  if [ "$#" -ne 1 ]; then
+    okfw_fail 2 "--update needs one version, such as okfw --update 1.2.3 (releases: https://github.com/$okfw_repo/releases)"
+  fi
+  okfw_check_version "$1"
+  okfw_version=$1
+  [ -z "${OKFW_PIN+set}" ] || okfw_fail 2 '--update cannot be used with OKFW_PIN set'
+  okfw_pin_dir=$(dirname "$0")
+  okfw_pin=$okfw_pin_dir/okf-wrapper.properties
+  okfw_unchanged='the pin was not changed'
+
+  okfw_find_sha_tool
+  okfw_find_java
+  command -v curl > /dev/null 2>&1 || okfw_fail 3 'curl not found'
+  okfw_find_cache
+  okfw_find_gh
+  okfw_check_jar_path
+  okfw_fetch "$okfw_name" jar
+  okfw_fetch "$okfw_name.sigstore.json" bundle
+  okfw_provenance "$okfw_tmp"
+  okfw_version_tie "$okfw_tmp"
+  okfw_new_sha256=$(okfw_hash_file "$okfw_tmp") || exit 3
+  okfw_place_jar "$okfw_new_sha256"
+
+  # A symbolic link or anything else that is not a regular file at the pin's path is left alone, before the pin is
+  # read: reading follows a link. A pin that names this version and this SHA-256 stays as it is; any other (another
+  # version or SHA-256, a malformed or a missing pin) is replaced.
+  if [ -L "$okfw_pin" ] || { [ -e "$okfw_pin" ] && [ ! -f "$okfw_pin" ]; }; then
+    okfw_fail 3 "cannot write the pin: $okfw_pin is not a file"
+  fi
+  okfw_old=
+  if [ -f "$okfw_pin" ]; then
+    okfw_old=$(okfw_read_pin "$okfw_pin" 2> /dev/null && printf '%s %s' "$okfw_version" "$okfw_sha256") || okfw_old=
+  fi
+  if [ "$okfw_old" = "$okfw_version $okfw_new_sha256" ]; then
+    printf 'okfw: okf-cli %s is already pinned\n' "$okfw_version"
+  else
+    okfw_write_pin "$okfw_new_sha256"
+    printf 'okfw: pinned okf-cli %s (sha256 %s)\n' "$okfw_version" "$okfw_new_sha256"
+  fi
+
+  # The new jar's `okf wrapper` may replace this script and okfw.cmd while they run (see the first comment).
+  okfw_cleanup
+  okfw_status=0
+  (
+    okfw_restore_lc_all
+    "$okfw_java" -jar "$okfw_jar" wrapper "--repo=$okfw_pin_dir"
+  ) || okfw_status=$?
+  if [ "$okfw_status" -ne 0 ]; then
+    okfw_fail 3 "okf-cli $okfw_version is pinned, but its launcher files could not be written (okf wrapper exited $okfw_status)"
+  fi
+  exit 0
+}
+
+# okfw --verify: checks the build provenance of the pinned jar (the cached one, or downloaded as for a run) and that it
+# reports the pinned version. Writes nothing but the cache.
+okfw_verify() {
+  [ "$#" -eq 0 ] || okfw_fail 2 '--verify takes no arguments'
+  okfw_unchanged='nothing was changed'
+  okfw_pin=${OKFW_PIN:-$(dirname "$0")/okf-wrapper.properties}
+  [ -f "$okfw_pin" ] || okfw_fail 2 "pin file not found: $okfw_pin $okfw_dash run okfw --update <version>"
+  okfw_read_pin "$okfw_pin"
+  okfw_find_sha_tool
+  okfw_find_java
+  command -v curl > /dev/null 2>&1 || okfw_fail 3 'curl not found'
+  okfw_find_cache
+  okfw_find_gh
+  okfw_cached_jar
+  okfw_fetch "$okfw_name.sigstore.json" bundle
+  okfw_provenance "$okfw_jar"
+  okfw_version_tie "$okfw_jar"
+  printf 'okfw: okf-cli %s verified (built by %s on %s)\n' "$okfw_version" "$okfw_workflow" "$okfw_source_ref"
+  exit 0
 }
 
 # Prints "okfw: <message>" on stderr and exits with code $1.
@@ -80,17 +152,42 @@ okfw_fail() {
   exit "$okfw_code"
 }
 
-# Called by the EXIT trap: removes a download that did not reach the cache.
+# Called by the EXIT trap (and by --update before okf wrapper runs): removes a download that did not reach the cache,
+# the temporary directory of a downloaded Sigstore bundle, gh's temporary configuration directory and the temporary
+# directory of a pin that was not moved into place.
 # shellcheck disable=SC2317,SC2329
 okfw_cleanup() {
   if [ -n "$okfw_tmp" ]; then
     rm -f "$okfw_tmp"
   fi
+  for okfw_left in "$okfw_tmp_bundle" "$okfw_tmp_gh" "$okfw_tmp_pin"; do
+    if [ -n "$okfw_left" ]; then
+      rm -rf "$okfw_left"
+    fi
+  done
+  okfw_tmp=
+  okfw_tmp_bundle=
+  okfw_tmp_pin=
+  okfw_tmp_gh=
 }
 
-# Whether $1 may be echoed in a message: printable ASCII, at most 64 characters (a pin is untrusted input). A failing
-# grep counts as "not printable".
+# Gives LC_ALL the caller's value back (or unsets it), before Java runs a command of okf-cli.
+okfw_restore_lc_all() {
+  if [ -n "$okfw_lc_all_set" ]; then
+    LC_ALL=$okfw_lc_all
+  else
+    unset LC_ALL
+  fi
+}
+
+# Whether $1 may be echoed in a message: printable ASCII, at most 64 characters, one line (a pin, an argument and a
+# jar's output are untrusted input). A failing grep counts as "not printable". Line ends are checked here: grep matches
+# line by line, and the grep of Git for Windows drops a CR before a line end.
 okfw_printable() {
+  case $1 in
+    *"
+"* | *"$okfw_cr"*) return 1 ;;
+  esac
   [ "${#1}" -le 64 ] && printf '%s\n' "$1" | LC_ALL=C grep -q '^[ -~]*$'
 }
 
@@ -101,8 +198,6 @@ okfw_read_pin() {
   okfw_version_line=
   okfw_sha256_line=
   okfw_bom=$(printf '\357\273\277')
-  okfw_cr=$(printf '\r')
-  okfw_tab=$(printf '\t')
   # `read` drops NUL bytes, which would hide them inside a key or value: such a file is rejected as a whole.
   okfw_size=$(wc -c < "$1") || exit 2
   okfw_text_size=$(LC_ALL=C tr -d '\000' < "$1" | wc -c) || exit 2
@@ -156,9 +251,7 @@ okfw_read_pin() {
   done < "$1"
   [ -n "$okfw_version_line" ] || okfw_fail 2 "$1: 'version' is missing"
   [ -n "$okfw_sha256_line" ] || okfw_fail 2 "$1: 'sha256' is missing"
-  # SemVer 2.0 without build metadata, as release.yml accepts it.
-  if ! printf '%s\n' "$okfw_version" \
-    | LC_ALL=C grep -Eq '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(\.(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?$'; then
+  if ! okfw_is_version "$okfw_version"; then
     if okfw_printable "$okfw_version"; then
       okfw_fail 2 "$1: version '$okfw_version' is not a version such as 1.2.3 or 1.2.3-rc.1"
     fi
@@ -167,6 +260,36 @@ okfw_read_pin() {
   printf '%s\n' "$okfw_sha256" | LC_ALL=C grep -Eq '^[0-9A-Fa-f]{64}$' \
     || okfw_fail 2 "$1: sha256 must be 64 hexadecimal digits"
   okfw_sha256=$(printf '%s' "$okfw_sha256" | tr ABCDEF abcdef)
+}
+
+# Whether $1 is a SemVer 2.0 version without build metadata, as release.yml accepts it. Only [0-9A-Za-z.-] reaches
+# grep, which matches line by line: a newline, a `/` or any other character fails before it.
+okfw_is_version() {
+  case $1 in
+    '' | *[!0-9A-Za-z.-]*) return 1 ;;
+  esac
+  printf '%s\n' "$1" \
+    | LC_ALL=C grep -Eq '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(\.(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?$'
+}
+
+# Exits 2 unless the --update argument $1 is a version; it is echoed only when printable.
+okfw_check_version() {
+  okfw_is_version "$1" && return 0
+  if okfw_printable "$1"; then
+    okfw_fail 2 "'$1' is not a version such as 1.2.3 or 1.2.3-rc.1"
+  fi
+  okfw_fail 2 '--update: the argument is not a version such as 1.2.3 or 1.2.3-rc.1'
+}
+
+# Sets okfw_sha_tool to sha256sum, else shasum, or exits 3.
+okfw_find_sha_tool() {
+  if command -v sha256sum > /dev/null 2>&1; then
+    okfw_sha_tool=sha256sum
+  elif command -v shasum > /dev/null 2>&1; then
+    okfw_sha_tool=shasum
+  else
+    okfw_fail 3 'no SHA-256 tool found (sha256sum or shasum)'
+  fi
 }
 
 # Prints the lowercase SHA-256 of the file $1.
@@ -206,28 +329,213 @@ okfw_find_java() {
   fi
 }
 
-# Downloads the pinned release jar to a temporary file next to its cache path, checks its SHA-256, then moves it there.
-okfw_download() {
-  command -v curl > /dev/null 2>&1 || okfw_fail 3 'curl not found'
+# Exits 3 unless gh is on the PATH and reports okfw_gh_floor or later (a pre-release of a version comes before it).
+okfw_find_gh() {
+  command -v gh > /dev/null 2>&1 \
+    || okfw_fail 3 "gh not found $okfw_dash --update and --verify check the build provenance with the GitHub CLI $okfw_gh_floor or later (https://cli.github.com)"
+  # The first line reads `gh version X.Y.Z (date)`. gh's configuration directory goes into the cache directory; only
+  # gh's own standard error is discarded.
   (umask 077 && mkdir -p "$okfw_cache") || exit 3
-  # A directory at the jar's path would swallow the download (mv moves into it).
+  okfw_gh_start
+  okfw_gh_out=$(okfw_gh --version 2> /dev/null) || okfw_gh_out=
+  okfw_gh_end
+  okfw_gh_version=$(printf '%s\n' "$okfw_gh_out" | LC_ALL=C tr -d '\r' | LC_ALL=C sed -n '1s/^gh version \([^ ]*\).*$/\1/p')
+  if [ "${#okfw_gh_version}" -gt 64 ] \
+    || ! printf '%s\n' "$okfw_gh_version" | LC_ALL=C grep -Eq '^[0-9]{1,9}\.[0-9]{1,9}\.[0-9]{1,9}(-[0-9A-Za-z.-]+)?$'; then
+    okfw_fail 3 "gh (unknown version) is too old $okfw_dash $okfw_gh_floor or later is required"
+  fi
+  # X.Y.Z against the floor, part by part, as numbers.
+  okfw_gh_rest=${okfw_gh_version%%-*}.
+  okfw_floor_rest=$okfw_gh_floor.
+  okfw_gh_order=same
+  while [ -n "$okfw_floor_rest" ] && [ "$okfw_gh_order" = same ]; do
+    okfw_a=${okfw_gh_rest%%.*}
+    okfw_b=${okfw_floor_rest%%.*}
+    okfw_gh_rest=${okfw_gh_rest#*.}
+    okfw_floor_rest=${okfw_floor_rest#*.}
+    if [ "$okfw_a" -gt "$okfw_b" ]; then
+      okfw_gh_order=newer
+    elif [ "$okfw_a" -lt "$okfw_b" ]; then
+      okfw_gh_order=older
+    fi
+  done
+  case $okfw_gh_order in
+    newer) return 0 ;;
+    same)
+      case $okfw_gh_version in
+        *-*) ;;
+        *) return 0 ;;
+      esac
+      ;;
+  esac
+  okfw_fail 3 "gh $okfw_gh_version is too old $okfw_dash $okfw_gh_floor or later is required"
+}
+
+# Creates the new empty directory okfw_tmp_gh in the cache, gh's configuration for one call (okfw_gh); exits 3 after
+# mktemp's own message when it cannot.
+okfw_gh_start() {
+  okfw_tmp_gh=$(mktemp -d "$okfw_cache/.gh-config.XXXXXX") || exit 3
+}
+
+# Removes the directory of okfw_gh_start.
+okfw_gh_end() {
+  rm -rf "$okfw_tmp_gh"
+  okfw_tmp_gh=
+}
+
+# Runs gh with no GitHub token or host from the environment, no update check or prompt, and okfw_tmp_gh (from
+# okfw_gh_start) as its configuration directory: a public release needs no login, and no gh configuration of the
+# user's takes part in the check.
+okfw_gh() {
+  (
+    unset GH_TOKEN GITHUB_TOKEN GH_ENTERPRISE_TOKEN GITHUB_ENTERPRISE_TOKEN GH_HOST
+    GH_CONFIG_DIR=$okfw_tmp_gh
+    GH_NO_UPDATE_NOTIFIER=1
+    GH_PROMPT_DISABLED=1
+    export GH_CONFIG_DIR GH_NO_UPDATE_NOTIFIER GH_PROMPT_DISABLED
+    exec gh "$@"
+  )
+}
+
+# Checks the build provenance of the jar $1 against the Sigstore bundle okfw_bundle, or exits 3. gh's standard
+# output goes to standard error: the launcher's standard output is its own.
+okfw_provenance() {
+  okfw_gh_start
+  okfw_status=0
+  okfw_gh attestation verify "$1" --bundle "$okfw_bundle" --repo "$okfw_repo" \
+    --predicate-type https://slsa.dev/provenance/v1 \
+    --cert-identity "https://github.com/$okfw_repo/$okfw_workflow@$okfw_source_ref" \
+    --source-ref "$okfw_source_ref" --deny-self-hosted-runners >&2 || okfw_status=$?
+  okfw_gh_end
+  if [ "$okfw_status" -ne 0 ]; then
+    okfw_fail 3 "the build provenance of $okfw_name could not be verified (gh attestation verify exited $okfw_status); $okfw_unchanged"
+  fi
+}
+
+# The version tie: exits 3 unless the verified jar $1 exits 0 for `version` and prints exactly
+# `okf-cli <okfw_version>`, followed by at most one line end (LF, or CRLF on Windows). release.yml builds the jar with
+# that version and checks it, so a verified jar of another release (a downgrade) fails here.
+okfw_version_tie() {
+  okfw_tie_status=0
+  okfw_out=$(
+    "$okfw_java" -jar "$1" version
+    okfw_s=$?
+    printf x
+    exit "$okfw_s"
+  ) || okfw_tie_status=$?
+  okfw_out=${okfw_out%x}
+  okfw_out=${okfw_out%"
+"}
+  okfw_out=${okfw_out%"$(printf '\r')"}
+  if [ "$okfw_tie_status" -eq 0 ] && [ "$okfw_out" = "okf-cli $okfw_version" ]; then
+    return 0
+  fi
+  if [ "$okfw_tie_status" -eq 0 ] && okfw_printable "$okfw_out"; then
+    okfw_fail 3 "the verified jar reports '$okfw_out', not 'okf-cli $okfw_version'; $okfw_unchanged"
+  fi
+  okfw_fail 3 "the verified jar does not report 'okf-cli $okfw_version'; $okfw_unchanged"
+}
+
+# Writes the pin for okfw_version and the SHA-256 $1 next to this script (whose path okfw_update has checked), as
+# okf-cli writes it: to a new file beside it, then moved over it. A write that fails exits 3 after the system tool's
+# message.
+okfw_write_pin() {
+  # mktemp -d creates a new directory under a name nobody else holds; the pin is written inside it with a plain
+  # redirect, so it gets the umask's mode (as okf wrapper writes it), and the directory is removed afterwards or on
+  # failure.
+  okfw_new_pin=$(mktemp -d "$okfw_pin_dir/.okf-wrapper.properties.XXXXXX") || okfw_fail 3 "cannot write the pin: $okfw_pin"
+  okfw_tmp_pin=$okfw_new_pin
+  {
+    printf '%s\n' '# okf-cli version pinned for this repository; read by ./okfw and the okf-cli GitHub Action.'
+    printf '%s\n' '# Docs: https://github.com/sharpbitstudio/okf-cli/blob/main/docs/launcher.md'
+    printf 'version=%s\n' "$okfw_version"
+    printf 'sha256=%s\n' "$1"
+  } > "$okfw_tmp_pin/okf-wrapper.properties" || okfw_fail 3 "cannot write the pin: $okfw_pin"
+  mv -f "$okfw_tmp_pin/okf-wrapper.properties" "$okfw_pin" || okfw_fail 3 "cannot write the pin: $okfw_pin"
+  rm -rf "$okfw_tmp_pin"
+  okfw_tmp_pin=
+}
+
+# Sets okfw_cache to the cache directory of okfw_version, okfw_name to the jar's asset name and okfw_jar to its cache
+# path; exits 3 when there is no cache directory.
+okfw_find_cache() {
+  if [ -n "${OKFW_CACHE_DIR-}" ]; then
+    okfw_cache=$OKFW_CACHE_DIR
+  elif [ -n "${XDG_CACHE_HOME-}" ]; then
+    okfw_cache=$XDG_CACHE_HOME
+  elif [ -n "${HOME-}" ]; then
+    okfw_cache=$HOME/.cache
+  else
+    okfw_fail 3 'no cache directory: set OKFW_CACHE_DIR, XDG_CACHE_HOME or HOME'
+  fi
+  okfw_cache=$okfw_cache/okf-cli/$okfw_version
+  okfw_name=okf-cli-$okfw_version-all.jar
+  okfw_jar=$okfw_cache/$okfw_name
+}
+
+# Makes okfw_jar the pinned jar: the cached one when it matches the pin, else a fresh download.
+okfw_cached_jar() {
+  if [ -f "$okfw_jar" ]; then
+    # A cached jar that does not match the pin is replaced by a fresh download.
+    okfw_have=$(okfw_hash_file "$okfw_jar") || exit 3
+    if [ "$okfw_have" != "$okfw_sha256" ]; then
+      rm -f "$okfw_jar" || okfw_fail 3 "cannot replace the cached jar $okfw_jar"
+      okfw_download
+    fi
+  else
+    okfw_download
+  fi
+}
+
+# A directory at the jar's cache path would swallow a download (mv moves into it).
+okfw_check_jar_path() {
   if [ -e "$okfw_jar" ] && [ ! -f "$okfw_jar" ]; then
     okfw_fail 3 "cannot use the cache: $okfw_jar is not a file"
   fi
-  okfw_url=https://github.com/sharpbitstudio/okf-cli/releases/download/v$okfw_version/$okfw_name
-  okfw_tmp=$(mktemp "$okfw_cache/.$okfw_name.XXXXXX") || exit 3
-  printf 'okfw: downloading okf-cli %s\n' "$okfw_version" >&2
+}
+
+# Downloads the release asset $1 of okfw_version into the cache directory. When $2 is `jar`: to a new temporary file,
+# kept in okfw_tmp. Otherwise (the Sigstore bundle): under its own name in a new temporary directory, kept in
+# okfw_tmp_bundle, with the file's path in okfw_bundle (gh accepts a bundle only with the extension .json or .jsonl).
+# The progress line goes out before the first download only.
+okfw_fetch() {
+  (umask 077 && mkdir -p "$okfw_cache") || exit 3
+  okfw_url=https://github.com/$okfw_repo/releases/download/v$okfw_version/$1
+  if [ "$2" = jar ]; then
+    okfw_file=$(mktemp "$okfw_cache/.$1.XXXXXX") || exit 3
+    okfw_tmp=$okfw_file
+  else
+    okfw_tmp_bundle=$(mktemp -d "$okfw_cache/.$1.XXXXXX") || exit 3
+    okfw_bundle=$okfw_tmp_bundle/$1
+    okfw_file=$okfw_bundle
+  fi
+  if [ -z "$okfw_progress" ]; then
+    printf 'okfw: downloading okf-cli %s\n' "$okfw_version" >&2
+    okfw_progress=1
+  fi
   curl -q --fail --silent --show-error --location --proto =https --proto-redir =https --tlsv1.2 --retry 3 \
-    -o "$okfw_tmp" "$okfw_url" || okfw_fail 3 "download failed: $okfw_url"
+    -o "$okfw_file" "$okfw_url" || okfw_fail 3 "download failed: $okfw_url"
+}
+
+# Downloads the pinned release jar to a temporary file next to its cache path, checks its SHA-256, then moves it there.
+okfw_download() {
+  command -v curl > /dev/null 2>&1 || okfw_fail 3 'curl not found'
+  okfw_check_jar_path
+  okfw_fetch "$okfw_name" jar
   okfw_got=$(okfw_hash_file "$okfw_tmp") || exit 3
   if [ "$okfw_got" != "$okfw_sha256" ]; then
     okfw_fail 3 "SHA-256 mismatch for $okfw_name: the pin says $okfw_sha256, the download has $okfw_got"
   fi
+  okfw_place_jar "$okfw_sha256"
+}
+
+# Moves the downloaded jar okfw_tmp, whose SHA-256 is $1, to the cache path okfw_jar.
+okfw_place_jar() {
   if ! mv -f "$okfw_tmp" "$okfw_jar"; then
     # Windows refuses to replace a jar that a running JVM holds open, such as one a parallel first run just placed
-    # there: that one is used when it matches the pin.
+    # there: that one is used when it has the same SHA-256.
     okfw_have=$(okfw_hash_file "$okfw_jar") || exit 3
-    [ "$okfw_have" = "$okfw_sha256" ] || exit 3
+    [ "$okfw_have" = "$1" ] || exit 3
     rm -f "$okfw_tmp"
   fi
   okfw_tmp=

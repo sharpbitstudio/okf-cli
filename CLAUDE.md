@@ -39,6 +39,9 @@ java -jar build/libs/okf-cli-<version>-all.jar version
 - Anything repo-specific goes through `okf.yaml` (`OkfConfig`), never a new hard-coded constant.
 - The launcher (`launcher/okfw`, `launcher/okfw.cmd`) and the GitHub Actions only fetch, verify and invoke the jar;
   every check stays in the jar.
+- Deployed launchers hard-code this repository, `.github/workflows/release.yml`, `refs/heads/main`, the tag form
+  `v<version>` and the asset names `okf-cli-<version>-all.jar` / `.sigstore.json`: none of them is renamed within a
+  major version (`docs/build-release.md`, "Release").
 - Third-party licences: the `all` jar bundles the Kotlin stdlib (with its own third-party parts), JetBrains
   Annotations and SnakeYAML; their licence texts live verbatim in `third-party-licenses/` and are named in
   `NOTICE`. After any bump of a runtime dependency, re-check that inventory against the upstream licence README

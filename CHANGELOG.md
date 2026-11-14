@@ -66,8 +66,15 @@ committed indexes are stale. Run the index command once, or set `index_language:
   `sh.exe`) and pin file `okf-wrapper.properties` (`version`, `sha256`) at the repository root: `./okfw <command>`
   downloads the pinned release jar once into a per-user cache, checks its SHA-256 against the pin before every run
   and runs it with Java 17 or later; exit `2` for a pin error, `3` when no verified jar or Java is available, the
-  jar's code otherwise; variables `OKFW_PIN` and `OKFW_CACHE_DIR`. `--update` and `--verify` as the first argument
-  are reserved (exit `2` in this launcher revision). See `docs/launcher.md`.
+  jar's code otherwise; variables `OKFW_PIN` and `OKFW_CACHE_DIR`. See `docs/launcher.md`.
+- `okfw --update <version>` pins a release: it downloads the jar and its Sigstore bundle, checks the build provenance
+  with the GitHub CLI (`gh` 2.102.0 or later; `gh attestation verify` with the exact signer identity of
+  `.github/workflows/release.yml` on `refs/heads/main`, the source ref and GitHub-hosted runners only; no token or
+  host from the environment and an empty, temporary `gh` configuration directory), checks that the verified jar
+  reports the version asked for, writes the pin and refreshes the launcher files with that version's `okf wrapper`.
+  `okfw --verify` runs the same checks on the pinned jar and changes nothing. Exit `2` for a usage error, `3` when
+  `gh` is missing or too old or a check fails (the pin unchanged). The minimum `gh` version and this policy may be
+  tightened in any release, each change listed here.
 - New command `okf wrapper`: writes the launcher files, refreshes ones that carry the launcher marker, writes the pin
   with its own SHA-256 when there is none and it runs from a release `all` jar, and creates `.gitattributes` when
   absent; exit `1` when a file without the marker is in the way (nothing written). `okf init` writes the same files

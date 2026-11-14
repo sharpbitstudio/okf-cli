@@ -131,7 +131,8 @@ fun Test.launcherTestProperties() {
     )
 }
 
-// `network` tests download a published release (LauncherNetworkTest); they run in `networkTest` only, not in `check`.
+// `network` tests download a published release and check its provenance with the real gh (LauncherNetworkTest); they
+// run in `networkTest` only, not in `check`.
 tasks.test {
     useJUnitPlatform {
         excludeTags("network")
@@ -141,7 +142,8 @@ tasks.test {
 
 tasks.register<Test>("networkTest") {
     group = "verification"
-    description = "Runs the tests tagged `network`: the launcher against a published release, with real curl."
+    description = "Runs the tests tagged `network`: the launcher against a published release, with real curl, and its " +
+        "--update / --verify provenance checks with the real gh (skipped locally when gh is missing or older than 2.102.0)."
     testClassesDirs = sourceSets.test.get().output.classesDirs
     classpath = sourceSets.test.get().runtimeClasspath
     useJUnitPlatform {
