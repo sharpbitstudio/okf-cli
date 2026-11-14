@@ -45,10 +45,13 @@ committed indexes are stale. Run the index command once, or set `index_language:
   - `cannot run git (required by okf index / check / impact): …` → `cannot run git (okf needs git on the PATH): …`
   - `code_paths[i] '<glob>' is not a valid glob: Illegal character range near index …` (several lines) →
     ``code_paths[i] '<glob>' is not a valid glob: a `[...]` character class has a range whose start comes after its end (e.g. `[z-a]`)``
+    (when the glob expands to more than one `{}` alternative, followed by `in alternative '<expanded glob>'`, like
+    the other findings raised per alternative)
 - The compatibility contract now says what it covers for message text (`docs/reference.md`, "Compatibility").
 - Fix: in a `code_paths` glob, a negated class that starts with `-` (`[!-a]`) treated the `-` as the start of a
-  range (it is a literal `-` now, as in POSIX globs), and a class whose range spans `/` (`[+-0]`) could match `/`
-  (a class never matches `/`, as the finding for a `/` inside a class already says).
+  range (it is a literal `-` now, as in POSIX globs, so `[!--]` is no longer rejected and `[!-a-0]` is), and a
+  class whose range spans `/` (`[+-0]`) could match `/` (a class never matches `/`, as the finding for a `/` inside
+  a class already says).
 
 ## 1.0.0-alpha.1 — 2026-11-12
 
