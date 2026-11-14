@@ -10,5 +10,5 @@ This directory is an [Open Knowledge Format (OKF) v0.2](https://github.com/Googl
 | File | What's inside |
 |---|---|
 | [reference.md](reference.md) | The `okf` CLI (commands, options, exit codes, `init` and `wrapper`), the `okf.yaml` schema, the bundle rules for multi-repo setups (`Satellite Note`, `repos:`, optional sub-indexes, the hub's "Repos" section, line endings), the hub's cross-repo check (`xcheck`), how to run the tool, and the compatibility contract |
-| [launcher.md](launcher.md) | The `okfw` launcher and the pin file: what `./okfw` does (download, SHA-256 check, Java), the pin grammar, command line, environment, exit codes and messages, cache and offline use, requirements, Windows, and the first bootstrap |
+| [launcher.md](launcher.md) | The `okfw` launcher and the pin file: what `./okfw` does (download, SHA-256 check, Java), the pin grammar, `okfw --update` and `okfw --verify` (build-provenance policy, minimum `gh`, version tie), command line, environment, exit codes and messages, cache and offline use, requirements, Windows, and the first bootstrap |
 | [build-release.md](build-release.md) | Build and test (bytecode 17, the three jars and the licence files inside them), CI, the release flow (assets, checksum, build-provenance attestation), how this repo checks its own docs, dependency updates, and the third-party licences |

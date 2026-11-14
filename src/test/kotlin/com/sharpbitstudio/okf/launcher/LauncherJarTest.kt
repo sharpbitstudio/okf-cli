@@ -139,6 +139,57 @@ class LauncherJarTest {
     }
 
     /**
+     * `okfw --update <this build's version>` with a real Java: the `curl` stub serves this build's jar and a dummy
+     * bundle, the `gh` stub accepts them. The version tie runs the jar, the pin is written, and the jar's `okf wrapper`
+     * replaces an older `okfw` (shorter) and `okfw.cmd` (longer) while they run: through `sh`, and on Windows through
+     * `cmd /c okfw.cmd`, Windows PowerShell and pwsh.
+     */
+    @Test
+    fun `okfw --update pins this build's jar and refreshes the launcher files while they run`() {
+        val version = version()
+        val sha = LauncherSandbox.sha256(allJar.readBytes())
+        box.curl(serve = allJar, bundle = tmp.resolve("bundle.sigstore.json").apply { writeText("{}\n") })
+        box.gh()
+        assertEquals(0, jar("wrapper", "--repo=${box.repo.path}").code)
+        val okfw = olderRevisions("okfw", "\n").single { it.first == "shorter" }.second
+        val okfwCmd = olderRevisions("okfw.cmd", "\r\n").single { it.first == "longer" }.second
+        val runs = buildList<Pair<String, () -> Run>> {
+            add("sh" to { okfw("--update", version) })
+            if (WINDOWS) {
+                // The shim must take sh.exe from the PATH: Git's bin/sh.exe would put Git's own curl before the stub.
+                box.stub.resolve("git.cmd").writeText("@echo off\r\necho not-an-exec-path\r\n")
+                val env = box.environment(path = listOf(box.stub, box.toolbox, Host.usrBin) + gitPath, env = env() + ("NoDefaultCurrentDirectoryInExePath" to null))
+                val cmd = System.getenv("ComSpec") ?: "cmd.exe"
+                val powershell = File(System.getenv("SystemRoot") ?: "C:\\Windows", "System32\\WindowsPowerShell\\v1.0\\powershell.exe")
+                add("cmd /c" to { box.guard(env); Host.run(listOf(cmd, "/d", "/c", "okfw.cmd --update $version"), box.repo, env) })
+                val ps = { exe: String -> Host.run(listOf(exe, "-NoProfile", "-NonInteractive", "-Command", "./okfw --update '$version'; exit \$LASTEXITCODE"), box.repo, env) }
+                add("powershell" to { ps(powershell.path) })
+                onPath("pwsh.exe")?.let { pwsh -> add("pwsh" to { ps(pwsh.path) }) }
+            }
+        }
+        for ((name, run) in runs) {
+            box.repo.resolve(Launcher.PIN).delete()
+            box.repo.resolve("okfw").writeText(okfw)
+            box.repo.resolve("okfw.cmd").writeText(okfwCmd)
+            box.cache.deleteRecursively()
+            box.clearCalls()
+            val result = run().lf()
+            assertEquals(0, result.code, "$name: $result")
+            assertTrue(
+                result.out.startsWith(
+                    "okfw: pinned okf-cli $version (sha256 $sha)\n[updated] okfw\n[updated] okfw.cmd\n[kept] ${Launcher.PIN}\n",
+                ),
+                "$name: ${result.out}",
+            )
+            assertArrayEquals(Launcher.pin(version, sha), box.repo.resolve(Launcher.PIN).readBytes(), name)
+            assertArrayEquals(launcherBytes("okfw"), box.repo.resolve("okfw").readBytes(), name)
+            assertArrayEquals(launcherBytes("okfw.cmd"), box.repo.resolve("okfw.cmd").readBytes(), name)
+            assertEquals(listOf("gh", "curl", "curl", "gh"), box.calls().map { it.first() }, name)
+            assertEquals(Run(0, "okf-cli $version\n", ""), okfw("version").lf(), name)
+        }
+    }
+
+    /**
      * Two older revisions of the launcher file [name] that still carry the marker: one shorter (its third line, a
      * comment, dropped) and one longer (a comment line added before the last line).
      */

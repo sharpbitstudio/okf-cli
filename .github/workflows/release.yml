@@ -6,6 +6,8 @@ name: release
 # and the attestation's Sigstore bundle. A maintainer reviews the draft and publishes it, which creates the tag.
 # The workflow never publishes a release, creates a tag or deletes a release. Nothing is published to a package
 # registry.
+# Deployed okfw launchers hard-code this repository, this workflow's path, refs/heads/main, the tag form v<version> and
+# the asset names: none of them is renamed within a major version (docs/build-release.md, "Release").
 
 on:
   workflow_dispatch:

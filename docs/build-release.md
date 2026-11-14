@@ -42,8 +42,11 @@ runs on JDK 25.
 properties: `okf.allJar` (the jar, which the launcher tests run through `okfw` with a real Java) and `okf.repoRoot`
 (this checkout, whose `launcher/` the tests compare with the embedded copy). The launcher tests run `okfw` with a real
 `sh` (`/bin/sh`; on Windows Git for Windows' `sh.exe`) against `curl` and `java` stubs, with a `PATH` that holds only
-those stubs and the tools the script may use. `networkTest` runs only the `network` tests: `okfw` downloads the
-published `1.0.0-alpha.1` with real `curl` and runs it. It is not part of `check`; the `e2e` workflow runs it.
+those stubs and the tools the script may use (`curl`, `gh` and `java` stubs for `--update` and `--verify`).
+`networkTest` runs only the `network` tests: `okfw` downloads the published `1.0.0-alpha.1` with real `curl` and runs
+it, and `okfw --verify` / `okfw --update` check its build provenance with the real `gh`. Those `gh` cases are skipped
+where `gh` is missing or older than 2.102.0, except on GitHub Actions, where that fails them. `networkTest` is not
+part of `check`; the `e2e` workflow runs it.
 
 ## CI
 
@@ -84,8 +87,8 @@ this repo and its own concurrency group. Its jobs are not required checks:
 
 - **`Launcher (<os>)`** on `ubuntu-latest`, `macos-latest` and `windows-latest`: `./gradlew build networkTest`, so the
   whole test suite, the launcher tests included, runs under dash, macOS `/bin/sh` and Git for Windows' `sh.exe`
-  (and `okfw.cmd` under `cmd`, Windows PowerShell and pwsh), and the real download of the published release runs on
-  each system. The log shows `java -version` and `gh --version` of the runner.
+  (and `okfw.cmd` under `cmd`, Windows PowerShell and pwsh), and the real download and provenance check of the
+  published release run on each system. The log shows `java -version` and `gh --version` of the runner.
 - **`Launcher (release-like version)`** on `ubuntu-latest`: `./gradlew build -Pversion=0.0.0-e2e.1`, so the tests
   whose result depends on whether the jar is a release (it then writes the pin itself) run as in a release build,
   and `shellcheck -s sh` on `launcher/okfw`.
@@ -137,26 +140,38 @@ whose workflow files differ from the default branch's can need the `Workflows: w
 workflow token cannot have. If that happens, start a new run from the current `main`. If publishing is refused
 because the tag name was used by a deleted release, delete the draft and release a new version.
 
-Consumers verify a downloaded jar with:
+Consumers verify a downloaded jar with `gh` 2.102.0 or later (older versions have advisories about these checks; see
+[launcher.md](launcher.md#the-provenance-policy)):
 
 ```bash
 sha256sum -c okf-cli-<version>-all.jar.sha256
 # build provenance, without a GitHub account (the bundle is the third asset):
 gh attestation verify okf-cli-<version>-all.jar --repo sharpbitstudio/okf-cli \
-  --bundle okf-cli-<version>-all.jar.sigstore.json \
-  --signer-workflow sharpbitstudio/okf-cli/.github/workflows/release.yml --source-ref refs/heads/main
+  --bundle okf-cli-<version>-all.jar.sigstore.json --predicate-type https://slsa.dev/provenance/v1 \
+  --cert-identity https://github.com/sharpbitstudio/okf-cli/.github/workflows/release.yml@refs/heads/main \
+  --source-ref refs/heads/main --deny-self-hosted-runners
 # with a GitHub login: the same check online, and the release attestation that ties the jar to the tag
 gh attestation verify okf-cli-<version>-all.jar --repo sharpbitstudio/okf-cli \
-  --signer-workflow sharpbitstudio/okf-cli/.github/workflows/release.yml --source-ref refs/heads/main
+  --predicate-type https://slsa.dev/provenance/v1 \
+  --cert-identity https://github.com/sharpbitstudio/okf-cli/.github/workflows/release.yml@refs/heads/main \
+  --source-ref refs/heads/main --deny-self-hosted-runners
 gh release verify-asset v<version> okf-cli-<version>-all.jar --repo sharpbitstudio/okf-cli
 ```
 
 The checksum detects a damaged download. `gh attestation verify --bundle` checks against the bundle asset,
-without a GitHub account, that this repo's release workflow built the jar on `main`; without `--signer-workflow`
-and `--source-ref`, an attestation from any workflow of the repository would pass. With a login, the same check
-runs online, and `gh release verify-asset` checks the release attestation GitHub adds on publication, which ties the
-jar to the tag. The build-provenance attestation names `refs/heads/main` and the built commit as its source,
-because the tag does not exist when the jar is built.
+without a GitHub account, that this repo's release workflow built the jar on `main`: `--cert-identity` requires the
+signer identity to be exactly that workflow on `refs/heads/main` (`--signer-workflow` would also accept it, but
+matches a pattern), and without it an attestation from any workflow of the repository would pass. The first command
+is the policy `okfw --update` and `okfw --verify` apply ([launcher.md](launcher.md#the-provenance-policy)), which
+add a check that the jar reports the version asked for. With a login, the same check runs online, and
+`gh release verify-asset` checks the release attestation GitHub adds on publication, which ties the jar to the tag.
+The build-provenance attestation names `refs/heads/main` and the built commit as its source, because the tag does not
+exist when the jar is built.
+
+Launchers already deployed in other repositories hard-code this repository (`sharpbitstudio/okf-cli`), the workflow
+path `.github/workflows/release.yml`, the source ref `refs/heads/main`, the tag form `v<version>` and the asset names
+`okf-cli-<version>-all.jar` and `okf-cli-<version>-all.jar.sigstore.json`: their downloads and provenance checks
+depend on them. None of these may be renamed within a major version.
 
 ## Own docs bundle
 

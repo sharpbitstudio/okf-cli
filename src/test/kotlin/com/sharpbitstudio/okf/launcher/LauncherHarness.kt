@@ -84,6 +84,8 @@ internal object Host {
         if (WINDOWS) {
             when (name) {
                 "shasum" -> usrBin.resolve("core_perl/shasum")
+                // The GitHub CLI is installed on its own, not with Git.
+                "gh" -> return onPath("gh.exe")
                 "curl" -> gitCurl
                 else -> usrBin.resolve("$name.exe")
             }.takeIf { it.isFile }
@@ -133,6 +135,7 @@ internal class LauncherSandbox(val root: File) {
     val stub: File = root.resolve("stub dir").apply { mkdirs() }
     val toolbox: File = root.resolve("tool box").apply { mkdirs() }
     private val log: File = root.resolve("calls.log")
+    private val ghEnvLog: File = root.resolve("gh-env.log")
     private val toolboxTools = mutableSetOf<String>()
 
     init {
@@ -182,21 +185,64 @@ internal class LauncherSandbox(val root: File) {
 
     /**
      * A `curl` stub that logs its argv, then copies [serve] to its `-o` target, or fails when [serve] is `null`; with
-     * [alsoTo], it copies [serve] there too (another run that placed the same file meanwhile).
+     * [alsoTo], it copies [serve] there too (another run that placed the same file meanwhile). A URL ending in
+     * `.sigstore.json` gets [bundle] instead, or fails when [bundle] is `null`.
      */
-    fun curl(serve: File?, alsoTo: File? = null) {
+    fun curl(serve: File?, alsoTo: File? = null, bundle: File? = null) {
+        val fail = "echo 'curl: (22) The requested URL returned error: 404' >&2\nexit 22\n"
         script(
             stub.resolve("curl"),
             "log curl \"\$@\"\n" +
+                "for a in \"\$@\"; do url=\$a; done\n" +
                 "out=\nwhile [ \$# -gt 0 ]; do case \$1 in -o) out=\$2; shift ;; esac; shift; done\n" +
+                "case \$url in *.sigstore.json)\n" +
+                (bundle?.let { "$cat ${quote(it.shell)} > \"\$out\"\nexit 0\n" } ?: fail) +
+                ";;\nesac\n" +
                 (alsoTo?.let { "$cat ${quote(serve!!.shell)} > ${quote(it.shell)}\n" } ?: "") +
-                (serve?.let { "$cat ${quote(it.shell)} > \"\$out\"\n" } ?: "echo 'curl: (22) The requested URL returned error: 404' >&2\nexit 22\n"),
+                (serve?.let { "$cat ${quote(it.shell)} > \"\$out\"\n" } ?: fail),
         )
     }
 
     /**
+     * A `gh` stub: logs its argv, and in a second log the variables [GH_ENV] as it sees them plus the state of its
+     * `GH_CONFIG_DIR` (`config=empty`, `missing`, `nonempty` or `unset`; see [ghEnv]). `--version` prints [version] to
+     * stdout and exits 0; a `--bundle` file not named `*.json` or `*.jsonl` fails with the real gh's message and exit 1;
+     * anything else prints `gh stdout` to stdout and `gh stderr` to stderr and exits with [exitCode].
+     */
+    fun gh(version: String = "gh version 2.102.0 (2026-09-30)\nhttps://github.com/cli/cli/releases/tag/v2.102.0\n", exitCode: Int = 0) {
+        val versionFile = root.resolve("gh-version.txt").apply { writeBytes(version.toByteArray(Charsets.UTF_8)) }
+        val env = GH_ENV.joinToString("") { name ->
+            "if [ -n \"\${$name+x}\" ]; then printf '%s=%s\\n' $name \"\$$name\"; else printf '%s unset\\n' $name; fi\n"
+        }
+        script(
+            stub.resolve("gh"),
+            "log gh \"\$@\"\n" +
+                "{\nprintf 'call\\n'\n$env" +
+                "d=\${GH_CONFIG_DIR-}\n" +
+                "if [ -z \"\$d\" ]; then s=unset; elif [ ! -d \"\$d\" ]; then s=missing; else s=empty; " +
+                "for f in \"\$d\"/* \"\$d\"/.[!.]* \"\$d\"/..?*; do if [ -e \"\$f\" ]; then s=nonempty; fi; done; fi\n" +
+                "printf 'config=%s\\n' \"\$s\"\n" +
+                "} >> ${quote(ghEnvLog.shell)}\n" +
+                "if [ \"\${1-}\" = --version ]; then $cat ${quote(versionFile.shell)}; exit 0; fi\n" +
+                // As the real gh: a bundle file must be named *.json or *.jsonl.
+                "bundle=; prev=\nfor a in \"\$@\"; do if [ \"\$prev\" = --bundle ]; then bundle=\$a; fi; prev=\$a; done\n" +
+                "case \$bundle in '' | *.json | *.jsonl) ;; *) echo 'Error: bundle file extension not supported, must be json or jsonl' >&2; exit 1 ;; esac\n" +
+                "echo 'gh stdout'\necho 'gh stderr' >&2\nexit $exitCode\n",
+        )
+    }
+
+    /** Per `gh` call: the variables it saw (`<name>=<value>` or `<name> unset`), then `config=<state>`. */
+    fun ghEnv(): List<List<String>> {
+        if (!ghEnvLog.isFile) return emptyList()
+        val calls = mutableListOf<MutableList<String>>()
+        ghEnvLog.readLines(Charsets.UTF_8).forEach { line -> if (line == "call") calls += mutableListOf<String>() else calls.last() += line }
+        return calls
+    }
+
+    /**
      * A `java` stub at [file]: `-version` writes [version] to stderr as given (CRLF and all) and exits with [versionExit];
-     * otherwise it logs its argv as `<tag>`, writes `jar output` to stdout and exits with [exitCode].
+     * otherwise it logs its argv as `<tag>`. With [jarVersion], `-jar <jar> version` writes it to stdout as given and
+     * exits with [jarVersionExit]; anything else writes `jar output` to stdout and exits with [exitCode].
      */
     fun java(
         version: String = "openjdk version \"21.0.2\" 2024-01-16\n",
@@ -204,13 +250,17 @@ internal class LauncherSandbox(val root: File) {
         tag: String = "java",
         file: File = stub.resolve("java"),
         versionExit: Int = 0,
+        jarVersion: String? = null,
+        jarVersionExit: Int = 0,
     ) {
         val versionFile = root.resolve("$tag-version.txt").apply { writeBytes(version.toByteArray(Charsets.UTF_8)) }
+        val jarVersionFile = jarVersion?.let { root.resolve("$tag-jar-version.txt").apply { writeBytes(it.toByteArray(Charsets.UTF_8)) } }
         file.parentFile.mkdirs()
         script(
             file,
             "if [ \"\${1-}\" = -version ]; then $cat ${quote(versionFile.shell)} >&2; exit $versionExit; fi\n" +
                 "log $tag \"\$@\"\n" +
+                (jarVersionFile?.let { "if [ \"\${3-}\" = version ]; then $cat ${quote(it.shell)}; exit $jarVersionExit; fi\n" } ?: "") +
                 "echo 'jar output'\n" +
                 "exit $exitCode\n",
         )
@@ -238,6 +288,7 @@ internal class LauncherSandbox(val root: File) {
 
     fun clearCalls() {
         log.delete()
+        ghEnvLog.delete()
     }
 
     /** The environment of a run: see the class comment; [env] overrides it. */
@@ -301,6 +352,12 @@ internal class LauncherSandbox(val root: File) {
         val BASE_TOOLS = listOf("sed", "grep", "tr", "head", "dirname", "wc", "mkdir", "mktemp", "mv", "rm")
 
         val GUARDED = listOf("curl", "gh", "java", "sha256sum", "shasum")
+
+        /** What the `gh` stub reports: the variables `okfw` removes or sets for `gh`. */
+        val GH_ENV = listOf(
+            "GH_TOKEN", "GITHUB_TOKEN", "GH_ENTERPRISE_TOKEN", "GITHUB_ENTERPRISE_TOKEN", "GH_HOST", "GH_CONFIG_DIR",
+            "GH_NO_UPDATE_NOTIFIER", "GH_PROMPT_DISABLED",
+        )
 
         /** Removed from every child: they would bypass the stubs, leak credentials or move the cache. */
         val CLEARED = listOf(

@@ -1,8 +1,8 @@
 ---
 type: Guide
 title: "The okfw launcher and the pin file"
-description: "How ./okfw runs the okf-cli version a repository pins: the pin file okf-wrapper.properties (place, grammar, the bytes okf-cli writes, hand-written pins), what the launcher does (download, SHA-256 check, Java lookup), its command line, environment, exit codes and messages, the cache and offline use, requirements, Windows, and the first bootstrap. Read it before adding the launcher to a repository or when ./okfw stops with an okfw: message."
-tags: [launcher, okfw, pin, okf-wrapper, windows, bootstrap]
+description: "How ./okfw runs the okf-cli version a repository pins: the pin file okf-wrapper.properties (place, grammar, the bytes okf-cli writes, hand-written pins), what the launcher does (download, SHA-256 check, Java lookup), okfw --update and okfw --verify (the build-provenance policy with the GitHub CLI, its minimum version, the version tie, the token-free gh environment, the manual and recovery paths), its command line, environment, exit codes and messages, the cache and offline use, requirements, Windows, and the first bootstrap. Read it before adding the launcher to a repository, before changing the pinned version, or when ./okfw stops with an okfw: message."
+tags: [launcher, okfw, pin, okf-wrapper, provenance, gh, windows, bootstrap]
 code_paths: ["launcher/**"]
 ---
 # The okfw launcher and the pin file
@@ -77,11 +77,12 @@ written by hand, from a jar verified as [build-release.md](build-release.md#rele
 
 ```text
 ./okfw <okf arguments>        run okf-cli with these arguments, unchanged (okfw in cmd)
+./okfw --update <version>     pin that release after checking its build provenance, then refresh the launcher
+./okfw --verify               check the build provenance of the pinned release; changes nothing
 ```
 
-`--update` and `--verify` as the first argument are reserved for the launcher: this launcher revision answers them
-with exit `2`; a later revision uses them to change and verify the pin. Anywhere else they go to okf-cli like every
-other argument.
+`--update` and `--verify` are the launcher's own options only as the first argument; anywhere else they go to
+okf-cli like every other argument. See [Changing and verifying the pin](#changing-and-verifying-the-pin).
 
 | Variable | Meaning |
 |---|---|
@@ -109,7 +110,13 @@ Exit `2`, nothing runs:
 - `okfw: <path>: version '<value>' is not a version such as 1.2.3 or 1.2.3-rc.1`
 - `okfw: <path>: sha256 must be 64 hexadecimal digits`
 - `okfw: <path>: is not a text file (it contains a NUL byte)` (checked before anything else in the file)
-- `okfw: --update and --verify are not available in this launcher revision`
+- `okfw: --update needs one version, such as okfw --update 1.2.3 (releases: https://github.com/sharpbitstudio/okf-cli/releases)`
+  (no argument after `--update`, or more than one)
+- `okfw: '<version>' is not a version such as 1.2.3 or 1.2.3-rc.1` (the argument of `--update`; when it is not
+  printable ASCII of at most 64 characters on one line:
+  `okfw: --update: the argument is not a version such as 1.2.3 or 1.2.3-rc.1`)
+- `okfw: --update cannot be used with OKFW_PIN set`
+- `okfw: --verify takes no arguments`
 
 The first problem in line order is reported, then a missing key, then the values. A pin is input a pull request can
 change, so a key or version is echoed only when it is printable ASCII of at most 64 characters; otherwise the line
@@ -134,12 +141,122 @@ Exit `3`, nothing runs:
 - `okfw: sh.exe not found - okfw.cmd runs okfw with Git for Windows' sh (install Git for Windows)` (from
   `okfw.cmd`; the file is ASCII, so the dash is a plain hyphen)
 
+Exit `3` from `--update` and `--verify` only (`<end>` is `the pin was not changed` for `--update` and
+`nothing was changed` for `--verify`):
+
+- `okfw: gh not found — --update and --verify check the build provenance with the GitHub CLI 2.102.0 or later (https://cli.github.com)`
+- `okfw: gh <found> is too old — 2.102.0 or later is required` (`<found>` is the version `gh --version` names, or
+  `(unknown version)` when its first line does not read `gh version X.Y.Z…`)
+- `okfw: the build provenance of okf-cli-<version>-all.jar could not be verified (gh attestation verify exited <n>); <end>`
+  (after the output of `gh`)
+- `okfw: the verified jar reports '<output>', not 'okf-cli <version>'; <end>` (when the output is not printable
+  ASCII of at most 64 characters on one line, or the jar exits with another code than `0`:
+  `okfw: the verified jar does not report 'okf-cli <version>'; <end>`)
+- `okfw: cannot write the pin: <path> is not a file` (any symbolic link, also one to a regular file, a directory or
+  anything else that is not a regular file at the pin's path; it is left as it is, and so is a link's target)
+- `okfw: cannot write the pin: <path>` (after the system tool's message: the new pin file cannot be created,
+  written or moved over the old one; the old pin stays)
+- `okfw: okf-cli <version> is pinned, but its launcher files could not be written (okf wrapper exited <n>)` (the pin
+  is written; see [Recovery](#recovery))
+
 When the cache directory cannot be created or written, the system tool's message comes first, and the launcher exits
 with `3`. When a download cannot be moved onto the cache path because a jar is already there (on Windows, a running
 Java holds the jar a parallel first run just placed), that jar is used if it matches the pin; otherwise the launcher
 exits with `3` after the system tool's message.
 
-Before a download, one progress line goes to standard error: `okfw: downloading okf-cli <version>`.
+Before a download, one progress line goes to standard error: `okfw: downloading okf-cli <version>` (once per
+invocation, also when `--verify` downloads only the Sigstore bundle).
+
+On standard output, `--update` prints `okfw: pinned okf-cli <version> (sha256 <hex>)` or
+`okfw: okf-cli <version> is already pinned`, followed by the output of `okf wrapper`; `--verify` prints
+`okfw: okf-cli <version> verified (built by .github/workflows/release.yml on refs/heads/main)`.
+
+## Changing and verifying the pin
+
+`./okfw --update <version>` moves the repository to another release in one step, and `./okfw --verify` checks the
+release the pin names. Both need the [GitHub CLI](https://cli.github.com) (`gh`) 2.102.0 or later; neither needs a
+GitHub account or token.
+
+`--update <version>`:
+
+1. Checks the argument: exactly one, a version as in the pin (`1.2.3`, `1.2.3-rc.1`; no `v`, no build metadata).
+   `OKFW_PIN` must not be set: `--update` writes the pin next to the script.
+2. Finds a SHA-256 tool, Java (as for a run), `curl` and `gh`, and checks the version of `gh`.
+3. Downloads `okf-cli-<version>-all.jar` and `okf-cli-<version>-all.jar.sigstore.json` from the release
+   `v<version>` (the URL form and `curl` options of a run) into the cache: the jar to a temporary file, the bundle
+   under its own name into a new temporary directory (`gh` accepts a bundle only as a `.json` or `.jsonl` file).
+4. Checks the build provenance of the jar against the bundle ([the policy](#the-provenance-policy)).
+5. The version tie: runs the verified jar's `version` command, which must exit with `0` and print exactly
+   `okf-cli <version>`, followed by at most one line end (LF, or CRLF on Windows).
+6. Moves the jar to its cache path and writes the pin next to the script: a new file beside it, moved over the old
+   one, with the bytes okf-cli writes and the mode the umask gives (as `okf wrapper` writes it); the new file is
+   written in a new temporary directory beside the pin, which is removed afterwards. Any symbolic link at the pin's path (also one to a regular file, even one that
+   holds the very pin that would be written), and anything else that is not a regular file there, is refused before
+   the pin is read and left as it is. A pin that already names this version and this SHA-256 is left as it is
+   (`is already pinned`); any other is replaced, also one of the same version with another SHA-256 (so a
+   hand-written pin becomes a verified one), a malformed one, or none. A pin that cannot be written (a read-only
+   directory, say) stops `--update` with exit `3`, and the old pin stays.
+7. Runs the new jar's `okf wrapper --repo=<the directory of the pin>`, which refreshes `okfw` and `okfw.cmd` to the
+   copies that version embeds (they may be replaced while they run). Its output passes through.
+
+A failure in steps 1 to 5 leaves the pin and the launcher files as they were (exit `2` in step 1, `3` otherwise).
+`--update` to the version already pinned changes nothing: in a clean work tree, `git status` stays clean.
+
+`--verify` reads the pin (`OKFW_PIN` is allowed), takes the jar from the cache or downloads it as a run does (with the
+SHA-256 check against the pin), downloads the bundle, and applies the same policy and version tie. It writes nothing
+but the cache, and exits `0` when both hold.
+
+### The provenance policy
+
+`gh` runs as:
+
+```text
+gh attestation verify <jar> --bundle <bundle> --repo sharpbitstudio/okf-cli \
+  --predicate-type https://slsa.dev/provenance/v1 \
+  --cert-identity https://github.com/sharpbitstudio/okf-cli/.github/workflows/release.yml@refs/heads/main \
+  --source-ref refs/heads/main --deny-self-hosted-runners
+```
+
+- The bundle is the release's third asset: with `--bundle`, `gh` reads the attestation from that file instead of
+  fetching it from GitHub, so no login is needed. The `.sha256` asset is never read.
+- `--cert-identity` requires the identity in the signing certificate to equal this repository's release workflow on
+  `main` exactly, with no prefix or pattern match: an attestation made by another workflow, branch or repository
+  fails. `--source-ref` checks the source ref recorded in the provenance, and `--deny-self-hosted-runners` requires a
+  GitHub-hosted runner, which is where [the release workflow](build-release.md#release) runs.
+- The minimum `gh` is 2.102.0. Older versions have advisories about exactly these checks:
+  [GHSA-4mq3-hpgx-9cx8](https://github.com/advisories/GHSA-4mq3-hpgx-9cx8) (`--source-ref` compared without regard
+  to case; fixed in 2.102.0), [GHSA-wjmr-j3rp-mh2g](https://github.com/advisories/GHSA-wjmr-j3rp-mh2g)
+  (`--signer-workflow` matched as a prefix; fixed in 2.102.0) and
+  [GHSA-mm27-mwq9-fr5g](https://github.com/advisories/GHSA-mm27-mwq9-fr5g) (regular-expression characters not
+  escaped when matching the certificate identity; fixed in 2.97.0). A pre-release of 2.102.0 counts as older.
+- `--source-digest` is not used: the launcher does not know which commit a release was built from. The version tie
+  binds the version instead. The release workflow builds the jar with the version being released and checks that
+  `okf version` prints it, so a jar that passes the policy reports the version it was released as. A genuine jar of
+  another release (an older one, for a downgrade) passes the policy but fails the tie.
+- The minimum `gh` version and the policy may be tightened in any release
+  ([reference.md](reference.md#compatibility)); each change is listed in `CHANGELOG.md`.
+
+`gh` runs with no token or host from the environment (`GH_TOKEN`, `GITHUB_TOKEN`, `GH_ENTERPRISE_TOKEN`,
+`GITHUB_ENTERPRISE_TOKEN` and `GH_HOST` unset), with an empty, temporary configuration directory (`GH_CONFIG_DIR`,
+a new directory in the cache for each call, removed afterwards), and with `GH_NO_UPDATE_NOTIFIER=1` and
+`GH_PROMPT_DISABLED=1`. Its standard output goes to standard error, so the launcher's standard output holds only its
+own result lines and those of `okf wrapper`.
+
+### Without gh
+
+No option skips the provenance check. Without `gh` 2.102.0 or later, verify a jar another way (the
+[consumer commands](build-release.md#release) on another machine, or a jar from a store you trust), write the pin by
+hand (the two lines `version=<version>` and `sha256=<the SHA-256 of okf-cli-<version>-all.jar>`), and run
+`./okfw wrapper` to refresh the launcher files. The launcher downloads only from the fixed release URL and checks the
+SHA-256 before every run, so a hand-written pin can only select a genuine release asset of this project.
+
+### Recovery
+
+If `okfw --update` fails after writing the pin (`its launcher files could not be written`), or a released
+`--update` itself is broken, edit the pin by hand to the version wanted (as above) and run `./okfw wrapper`: it runs
+the pinned jar, whose `okf wrapper` writes the launcher files that version embeds.
+`./okfw wrapper && git diff --exit-code` shows whether the committed launcher files are the ones the pinned version
+writes.
 
 ## Cache and offline use
 
@@ -163,6 +280,7 @@ launcher deletes it and tries to download. The layout of the cache is not part o
   BSD; dash, bash, ksh and the shell of Git for Windows run it);
 - `sha256sum`, or `shasum` (macOS);
 - `curl`, for the first run of a version;
+- the [GitHub CLI](https://cli.github.com) 2.102.0 or later, for `--update` and `--verify` only;
 - Java 17 or later;
 - on Windows, [Git for Windows](https://gitforwindows.org/), which supplies `sh.exe`, the tools and `curl`
   (okf-cli needs git anyway).
@@ -204,7 +322,8 @@ The launcher needs a pin, and a pin needs a jar someone trusted once:
 4. From then on: `./okfw check --strict --refs-strict --code-paths-required`.
 
 A build that is not a release (a `-SNAPSHOT`, or the classes of a source build) writes the launcher but no pin, and
-says so. To move to another version, change both lines of the pin (from a jar verified as above) and run
-`./okfw wrapper`, which refreshes the launcher files to the ones that version embeds; `okfw --update` and
-`okfw --verify`, which download, verify the build provenance and write the pin in one step, arrive in a later
-launcher revision.
+says so: then run `./okfw --update <version>` to pin a release, which checks its build provenance first. To move to
+another version later, run `./okfw --update <version>` and commit the changed files.
+
+The bootstrap itself checks no provenance: the pin records the SHA-256 of the jar that was run, so it rests on the
+verification of the first download. Every later change through `--update` is checked before the pin is written.

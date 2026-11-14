@@ -270,7 +270,9 @@ java -jar okf-cli-<version>-all.jar wrapper
 it from `cmd` and PowerShell with Git for Windows' `sh.exe`. `./okfw <okf arguments>` runs the okf-cli version that
 the pin file `<repo>/okf-wrapper.properties` names, downloaded once and checked against the pinned SHA-256 before every
 run. What the launcher does, the pin file's grammar, its messages and exit codes are in [launcher.md](launcher.md).
-`--repo` must be the git work-tree root; `okf.yaml` is not needed.
+`--repo` must be the git work-tree root; `okf.yaml` is not needed. `./okfw --update <version>` changes the pin after
+checking the release's build provenance, then runs `okf wrapper` of that version
+([launcher.md](launcher.md#changing-and-verifying-the-pin)).
 
 - `okfw` and `okfw.cmd` are the copies embedded in the running jar, written with LF and CRLF line ends. An absent one
   is created; an identical one is `[unchanged]`; one that carries the launcher marker (`okf-cli launcher` within its
@@ -508,18 +510,19 @@ With these task names, `index_command: ./gradlew okfIndex` names the task that r
   that `okf init` creates in a repository without documentation passes
   `okf check --strict --refs-strict --code-paths-required` of the same version. The text of the starter files and of
   the launcher scripts is not covered: a later version may write better ones, and files already written change only
-  through `okf wrapper`.
+  through `okf wrapper` or `okfw --update`.
 - The launcher files a version embeds carry a launcher revision number and may improve between versions; for the
   same repository, `okf wrapper` of a later version may therefore report `[updated]` where an earlier one reported
   `[unchanged]`. The wording and format of its lines stay covered.
 - The pin file: its name, its place at the repository root, the keys `version` and `sha256` and its grammar do not
   change within a major version; a launcher of the same major version reads every pin written by one.
-- The launcher ([launcher.md](launcher.md)): its command line (`okfw <okf arguments>`; `--update` and `--verify` as
-  the first argument are reserved for the launcher), the variables `OKFW_PIN` and `OKFW_CACHE_DIR`, its exit codes
-  (`2` and `3` for its own errors, the tool's code otherwise) and its own `okfw: …` messages are covered; so is that
-  it prints nothing on standard output when it runs a command, downloads only from this project's release assets over
-  HTTPS, and checks the pinned SHA-256 before every run. Output of `curl`, `sh.exe` and Java, and the cache layout, are
-  not.
+- The launcher ([launcher.md](launcher.md)): its command line (`okfw <okf arguments>`, `okfw --update <version>`,
+  `okfw --verify`), the variables `OKFW_PIN` and `OKFW_CACHE_DIR`, its exit codes (`2` and `3` for its own errors, the
+  tool's code otherwise) and its own `okfw: …` messages are covered; so is that it prints nothing on standard output
+  when it runs a command, downloads only from this project's release assets over HTTPS, and checks the pinned SHA-256
+  before every run. Output of `curl`, `gh`, `sh.exe` and Java, and the cache layout, are not.
+- The minimum `gh` version and the provenance policy of `okfw --update` and `okfw --verify` may be tightened in any
+  release; each change is listed in `CHANGELOG.md`.
 - Input that a version rejects may be valid in a later minor version: a new optional key or a new allowed value
   turns the former `okf.yaml` error (exit `2`) or finding into accepted input. The other direction is covered by
   the first rule: input that is valid stays valid, with the same output.
