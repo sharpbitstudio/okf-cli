@@ -48,7 +48,7 @@ jobs:
           java-version: 25
 
       - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v6.4.0
+        uses: gradle/actions/setup-gradle@v6.4.1
         with:
           # Validates the checked-in wrapper jar against known-good checksums and caches ~/.gradle.
           validate-wrappers: true
@@ -134,7 +134,7 @@ jobs:
           java-version: 25
 
       - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v6.4.0
+        uses: gradle/actions/setup-gradle@v6.4.1
         with:
           validate-wrappers: true
           cache-cleanup: on-success
