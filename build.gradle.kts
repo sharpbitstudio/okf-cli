@@ -42,16 +42,16 @@ tasks.withType<JavaCompile>().configureEach {
     options.release.set(17)
 }
 
-tasks.test {
-    useJUnitPlatform()
-}
-
-// `okf version` prints the version the jar was built with.
+// `okf version` prints the version the jar was built with. The launcher (`launcher/okfw`, `launcher/okfw.cmd`) is
+// embedded, so `okf wrapper` and `okf init` write the copy this jar was built with (docs/launcher.md).
 tasks.processResources {
     val projectVersion = project.version.toString()
     inputs.property("version", projectVersion)
     filesMatching("com/sharpbitstudio/okf/version.properties") {
         expand("version" to projectVersion)
+    }
+    from(layout.projectDirectory.dir("launcher")) {
+        into("com/sharpbitstudio/okf/launcher")
     }
 }
 
@@ -101,6 +101,53 @@ val allJar = tasks.register<Jar>("allJar") {
 
 tasks.assemble {
     dependsOn(allJar)
+}
+
+/**
+ * System properties of the test JVMs: `okf.repoRoot` (this checkout, for the committed `launcher/` files) and
+ * `okf.allJar` (this build's `all` jar, which LauncherJarTest runs through the launcher). The jar is an input, so
+ * `test` builds it first.
+ */
+abstract class LauncherTestProperties : CommandLineArgumentProvider {
+    @get:Internal
+    abstract val repoRoot: Property<String>
+
+    @get:InputFile
+    @get:PathSensitive(PathSensitivity.NONE)
+    abstract val allJar: RegularFileProperty
+
+    override fun asArguments(): Iterable<String> =
+        listOf("-Dokf.repoRoot=${repoRoot.get()}", "-Dokf.allJar=${allJar.get().asFile.absolutePath}")
+}
+
+fun Test.launcherTestProperties() {
+    val jar = allJar.flatMap { it.archiveFile }
+    inputs.dir(layout.projectDirectory.dir("launcher")).withPropertyName("launcher").withPathSensitivity(PathSensitivity.RELATIVE)
+    jvmArgumentProviders.add(
+        objects.newInstance<LauncherTestProperties>().apply {
+            repoRoot.set(layout.projectDirectory.asFile.absolutePath)
+            allJar.set(jar)
+        },
+    )
+}
+
+// `network` tests download a published release (LauncherNetworkTest); they run in `networkTest` only, not in `check`.
+tasks.test {
+    useJUnitPlatform {
+        excludeTags("network")
+    }
+    launcherTestProperties()
+}
+
+tasks.register<Test>("networkTest") {
+    group = "verification"
+    description = "Runs the tests tagged `network`: the launcher against a published release, with real curl."
+    testClassesDirs = sourceSets.test.get().output.classesDirs
+    classpath = sourceSets.test.get().runtimeClasspath
+    useJUnitPlatform {
+        includeTags("network")
+    }
+    launcherTestProperties()
 }
 
 // This repo's own docs/ is an OKF bundle (okf.yaml), checked by the code this build compiles — not by a

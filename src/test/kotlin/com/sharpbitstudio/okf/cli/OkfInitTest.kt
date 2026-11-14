@@ -16,7 +16,10 @@ import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.PrintStream
 
-/** `okf init` end to end through [OkfCli] in a throwaway git work tree (real git, like [OkfCliTest]). */
+/**
+ * `okf init` end to end through [OkfCli] in a throwaway git work tree (real git, like [OkfCliTest]), without the launcher
+ * (`--launcher=false`) unless a test says otherwise; `init` with the launcher is covered by [OkfWrapperTest].
+ */
 class OkfInitTest {
     @TempDir
     lateinit var home: File
@@ -36,7 +39,7 @@ class OkfInitTest {
 
     @Test
     fun `empty repo - writes okf yaml and the bundle root, and the strict check passes without a commit`() {
-        val run = run("init", "--repo=${repo.path}", "--index-command=java -jar okf.jar index")
+        val run = run("init", "--repo=${repo.path}", "--index-command=java -jar okf.jar index", "--launcher=false")
         assertEquals(Run(0, "[created] okf.yaml\n[created] docs/index.md\nokf init OK: 2 file(s) created.\n", ""), run)
         assertEquals(
             "# OKF (Open Knowledge Format) settings of this repository: https://github.com/sharpbitstudio/okf-cli/blob/main/docs/reference.md\n" +
@@ -74,7 +77,7 @@ class OkfInitTest {
 
     @Test
     fun `nested docs root - docs_root is written and the parent directories are created`() {
-        val run = run("init", "--docs-root=handbook/docs", "--index-command", "okf index")
+        val run = run("init", "--docs-root=handbook/docs", "--index-command", "okf index", "--launcher=false")
         assertEquals(Run(0, "[created] okf.yaml\n[created] handbook/docs/index.md\nokf init OK: 2 file(s) created.\n", ""), run)
         assertEquals(config(repo.canonicalFile.name, docsRoot = "handbook/docs"), read("okf.yaml"))
         assertTrue(repo.resolve("handbook/docs/index.md").isFile)
@@ -224,11 +227,16 @@ class OkfInitTest {
     // --- index command ---
 
     @Test
-    fun `index command - required in this version`() {
+    fun `index command - required with --launcher=false`() {
         val before = snapshot()
         assertEquals(
-            Run(2, "", "okf init: --index-command=<command> is required: the one-line command that regenerates the indexes in this repository\n"),
-            run("init"),
+            Run(
+                2,
+                "",
+                "okf init: --index-command=<command> is required: the one-line command that regenerates the indexes in this repository " +
+                    "(with --launcher=false)\n",
+            ),
+            run("init", "--launcher=false"),
         )
         assertEquals(before, snapshot())
     }
@@ -262,7 +270,7 @@ class OkfInitTest {
         )
         for (value in plain + quoted) {
             reset()
-            val run = run("init", "--index-command=$value")
+            val run = run("init", "--index-command=$value", "--launcher=false")
             assertEquals(0, run.code, "$value: $run")
             val escaped = value.replace("\\", "\\\\").replace("\"", "\\\"")
             val written = if (value in plain) value else "\"$escaped\""
@@ -321,7 +329,7 @@ class OkfInitTest {
     @Test
     fun `conflict - okf yaml already exists, even an invalid one`() {
         write("okf.yaml", "not: [valid\n")
-        assertConflict(listOf("okf.yaml already exists — this repository is already set up"))
+        assertConflict(listOf("okf.yaml already exists — this repository is already set up (okf wrapper adds or refreshes the launcher)"))
     }
 
     @Test
@@ -373,7 +381,7 @@ class OkfInitTest {
         write("docs/features/.gitkeep", "")
         assertConflict(
             listOf(
-                "okf.yaml already exists — this repository is already set up",
+                "okf.yaml already exists — this repository is already set up (okf wrapper adds or refreshes the launcher)",
                 "docs/ already holds 1 Markdown file(s) (1 without frontmatter, 0 with frontmatter, 0 with invalid frontmatter, " +
                     "0 non-root index.md with frontmatter) — pass --adopt to use it as the bundle (no existing file is changed), " +
                     "or --docs-root=<dir> for a separate bundle",
@@ -566,9 +574,12 @@ class OkfInitTest {
         return Run(code, text(out), text(err))
     }
 
-    /** `okf init` in [repo] with `--index-command=okf index` unless [args] name one. */
-    private fun init(vararg args: String): Run =
-        run("init", "--repo=${repo.path}", *(if (args.any { it.startsWith(CliArgs.INDEX_COMMAND) }) args else arrayOf(*args, INDEX_COMMAND)))
+    /** `okf init` in [repo] with `--index-command=okf index` and `--launcher=false` unless [args] name them. */
+    private fun init(vararg args: String): Run {
+        val command = if (args.any { it.startsWith(CliArgs.INDEX_COMMAND) }) emptyArray() else arrayOf(INDEX_COMMAND)
+        val launcher = if (args.any { it.startsWith(CliArgs.LAUNCHER) }) emptyArray() else arrayOf("${CliArgs.LAUNCHER}=false")
+        return run("init", "--repo=${repo.path}", *args, *command, *launcher)
+    }
 
     /** Runs `init` with [args], expecting exit 1 with exactly [problems] and an unchanged tree. */
     private fun assertConflict(problems: List<String>, vararg args: String) {

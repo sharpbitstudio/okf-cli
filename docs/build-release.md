@@ -1,8 +1,8 @@
 ---
 type: Guide
 title: "Build, CI and release"
-description: "How okf-cli is built and tested (bytecode 17 on JDK 25, the three jars and the licence files inside them), what CI runs, how a GitHub release gets its jar, checksum and build-provenance attestation, how this repo checks its own docs bundle, how dependency updates are handled, and where the third-party licences live."
-tags: [build, ci, release, attestation, licences]
+description: "How okf-cli is built and tested (bytecode 17 on JDK 25, the three jars, the licence files inside them and the launcher in the thin and all jars, the network tests), what CI runs (build, e2e), how a GitHub release gets its jar, checksum and build-provenance attestation, how this repo checks its own docs bundle, how dependency updates are handled, and where the third-party licences live."
+tags: [build, ci, e2e, release, attestation, licences]
 code_paths: ["build.gradle.kts", "gradle.properties", "gradle/libs.versions.toml", ".github/workflows/**", ".github/dependabot.yml", "src/main/resources/com/sharpbitstudio/okf/version.properties", "LICENSE", "NOTICE", "third-party-licenses/**"]
 ---
 # Build, CI and release
@@ -12,6 +12,7 @@ code_paths: ["build.gradle.kts", "gradle.properties", "gradle/libs.versions.toml
 ```bash
 ./gradlew build                                  # compile (bytecode 17, built on JDK 25), tests, all jars
 java -jar build/libs/okf-cli-<version>-all.jar version
+./gradlew networkTest                            # the tests that download a published release (not in build)
 ```
 
 The version comes from `gradle.properties` (`1.0.0-SNAPSHOT` between releases); the release workflow passes
@@ -29,8 +30,20 @@ Every jar carries this repo's `LICENSE` and `NOTICE` in `META-INF/`. The `all` j
 the components it bundles, under `META-INF/licenses/<component>/…`, copied from `third-party-licenses/` (see
 [Third-party licences](#third-party-licences)).
 
+The thin and the `all` jar also carry the launcher, `launcher/okfw` and `launcher/okfw.cmd`, as resources under
+`com/sharpbitstudio/okf/launcher/`: `okf wrapper` and `okf init` write the copy the running jar was built with
+([launcher.md](launcher.md)). So a release freezes the launcher it ships, and the hermetic launcher tests run in
+every build, the release build included.
+
 The bytecode and the compile API are pinned to Java 17, so consumers may run the jar on Java 17; the build itself
 runs on JDK 25.
+
+`test` runs every test except those tagged `network`. It depends on the `all` jar and passes the tests two system
+properties: `okf.allJar` (the jar, which the launcher tests run through `okfw` with a real Java) and `okf.repoRoot`
+(this checkout, whose `launcher/` the tests compare with the embedded copy). The launcher tests run `okfw` with a real
+`sh` (`/bin/sh`; on Windows Git for Windows' `sh.exe`) against `curl` and `java` stubs, with a `PATH` that holds only
+those stubs and the tools the script may use. `networkTest` runs only the `network` tests: `okfw` downloads the
+published `1.0.0-alpha.1` with real `curl` and runs it. It is not part of `check`; the `e2e` workflow runs it.
 
 ## CI
 
@@ -65,6 +78,17 @@ check; these checks come from the branch's push run (or a manual run on the bran
 from the `pull_request` run.
 
 A newer push to the same branch cancels a still-running build of it, except on `main`.
+
+`.github/workflows/e2e.yml` runs on the same events, with the same skip of the `pull_request` run for a branch of
+this repo and its own concurrency group. Its jobs are not required checks:
+
+- **`Launcher (<os>)`** on `ubuntu-latest`, `macos-latest` and `windows-latest`: `./gradlew build networkTest`, so the
+  whole test suite, the launcher tests included, runs under dash, macOS `/bin/sh` and Git for Windows' `sh.exe`
+  (and `okfw.cmd` under `cmd`, Windows PowerShell and pwsh), and the real download of the published release runs on
+  each system. The log shows `java -version` and `gh --version` of the runner.
+- **`Launcher (release-like version)`** on `ubuntu-latest`: `./gradlew build -Pversion=0.0.0-e2e.1`, so the tests
+  whose result depends on whether the jar is a release (it then writes the pin itself) run as in a release build,
+  and `shellcheck -s sh` on `launcher/okfw`.
 
 ## Release
 

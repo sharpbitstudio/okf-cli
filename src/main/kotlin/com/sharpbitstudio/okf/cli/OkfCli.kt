@@ -27,7 +27,7 @@ import java.util.Properties
  * The `okf` command line: `index` regenerates the bundle's sub-indexes, `check` validates the bundle
  * ([OkfChecker] + [OkfRefChecker]), `impact` reports docs made stale by code changes ([OkfImpact]),
  * `xcheck` checks the hub and its satellites together ([OkfXcheck]), `init` writes `okf.yaml` and the bundle root for a
- * new bundle ([OkfInit]).
+ * new bundle ([OkfInit]), `wrapper` writes or refreshes the launcher `okfw` ([OkfWrapper]).
  * Console lines and GitHub Actions annotations are part of the output contract: info lines
  * and annotations on [out], warnings and failures on [err]. Exit codes: [EXIT_OK], [EXIT_FINDINGS]
  * (findings that fail under the given strictness, or an operation that cannot complete — broken
@@ -39,6 +39,13 @@ class OkfCli(
     /** Whether workflow-command annotations are printed ([OkfGithubActions.enabled] in production). */
     private val githubActions: Boolean = OkfGithubActions.enabled(),
     private val now: () -> Instant = Instant::now,
+    /**
+     * Where this code was loaded from: the `all` jar, the thin jar or a classes directory (`null` when unknown). `wrapper`
+     * and `init` write a pin only for the `all` jar of a release build ([SelfJar.isReleaseAllJar]).
+     */
+    private val selfJar: File? = SelfJar.codeSource(),
+    /** The version this code reports (`okf version`, the pin `wrapper` and `init` write). */
+    private val toolVersion: String = version(),
 ) {
     /** Runs one command line; returns the process exit code. */
     fun run(args: List<String>, cwd: File = File("").absoluteFile): Int {
@@ -59,13 +66,14 @@ class OkfCli(
             return EXIT_USAGE
         }
         if (parsed.command == Command.VERSION) {
-            out.println("okf-cli ${version()}")
+            out.println("okf-cli $toolVersion")
             return EXIT_OK
         }
         return try {
             requireWorkTreeRoot(parsed.repo)
-            // `init` writes okf.yaml and the bundle, so it neither loads nor requires them.
-            if (parsed.command == Command.INIT) return OkfInit(out, err).run(parsed)
+            // `init` writes okf.yaml and the bundle, and `wrapper` the launcher, so neither loads nor requires them.
+            if (parsed.command == Command.INIT) return OkfInit(out, err, SelfJar(selfJar, toolVersion)).run(parsed)
+            if (parsed.command == Command.WRAPPER) return OkfWrapper(out, err, SelfJar(selfJar, toolVersion)).run(parsed)
             val config = OkfConfig.load(parsed.repo)
             val bundle = config.bundleDir(parsed.repo)
             if (!bundle.isDirectory) throw OkfConfigException("docs_root '${config.docsRoot}' is not a directory in ${parsed.repo.path}")
@@ -74,7 +82,7 @@ class OkfCli(
                 Command.CHECK -> check(parsed, bundle, config)
                 Command.IMPACT -> impact(parsed, bundle, config)
                 Command.XCHECK -> xcheck(parsed, config)
-                Command.VERSION, Command.INIT -> error("handled above")
+                Command.VERSION, Command.INIT, Command.WRAPPER -> error("handled above")
             }
         } catch (e: OkfConfigException) {
             err.println("okf ${parsed.command.cliName}: ${e.message}")
@@ -351,10 +359,13 @@ class OkfCli(
             |  xcheck    check the hub and its satellites together (run in the hub): cross-repo code references,
             |            hub:/repos: links, drift of hub records, satellite index URLs
             |  version   print the tool version
-            |  init      write okf.yaml and the bundle-root index.md for a new bundle; never overwrites
+            |  init      write okf.yaml and the bundle-root index.md for a new bundle, and the launcher okfw with
+            |            its pin (as wrapper does); never overwrites
+            |  wrapper   write or refresh the launcher okfw / okfw.cmd, and the pin okf-wrapper.properties when
+            |            absent (from a release jar)
             |
             |Options (boolean flags: bare = true, or =true|false):
-            |  --repo=<dir>                git work-tree root holding okf.yaml (init writes it there)    [index, check, impact, xcheck, init]
+            |  --repo=<dir>                git work-tree root holding okf.yaml (init writes it there)    [all but version]
             |                              (default: working directory)
             |  --strict                    files without frontmatter are failures                        [check]
             |  --refs-strict               broken code references are failures                           [check]
@@ -369,9 +380,12 @@ class OkfCli(
             |                              after a clean run
             |  --name=<repo>               repository name (default: the name of the --repo directory)   [init]
             |  --docs-root=<dir>           repo-relative directory of the bundle (default: docs)         [init]
-            |  --index-command=<command>   the one-line command that regenerates the indexes             [init, required]
+            |  --index-command=<command>   the one-line command that regenerates the indexes             [init]
+            |                              (default: ./okfw index; required with --launcher=false)
             |  --adopt                     use a docs root that already holds documents as the bundle    [init]
             |                              (no existing file is changed)
+            |  --launcher                  also write the launcher okfw / okfw.cmd, its pin and          [init]
+            |                              .gitattributes (default: true)
             |
             |Exit codes: 0 OK, 1 findings (or the command could not complete), 2 usage or okf.yaml error
             |(xcheck: 0 also with drift warnings only; 2 also for a missing or misconfigured satellite checkout).

@@ -1,8 +1,8 @@
 ---
 type: Guide
 title: "okf CLI reference"
-description: "The okf CLI (commands, options, exit codes), the okf.yaml schema, the bundle rules the tool enforces in multi-repo setups, the hub's cross-repo check (xcheck), how to run the tool, and the compatibility contract."
-tags: [okf, cli, okf-yaml, satellite-note, xcheck, compatibility, reference]
+description: "The okf CLI (commands, options, exit codes), the okf.yaml schema, the bundle rules the tool enforces in multi-repo setups, the hub's cross-repo check (xcheck), starting a bundle and writing the launcher (init, wrapper), how to run the tool, and the compatibility contract."
+tags: [okf, cli, okf-yaml, satellite-note, xcheck, init, wrapper, compatibility, reference]
 code_paths: ["src/main/kotlin/com/sharpbitstudio/okf/**"]
 ---
 # okf CLI reference
@@ -19,8 +19,9 @@ repo's bundle (`docs_root` in `okf.yaml`, default `docs`):
 
 A fourth command, `okf xcheck`, runs in the hub and checks the hub and its satellites together
 ([Cross-repo check](#cross-repo-check-xcheck)). `okf version` prints `okf-cli <version>`. `okf init` starts a
-bundle: it writes `okf.yaml` and the bundle-root `<docs_root>/index.md`
-([Starting a bundle](#starting-a-bundle-okf-init)).
+bundle: it writes `okf.yaml`, the bundle-root `<docs_root>/index.md` and the launcher
+([Starting a bundle](#starting-a-bundle-okf-init)). `okf wrapper` writes or refreshes the launcher `okfw`, which runs
+the okf-cli version a repository pins ([The launcher](#the-launcher-okf-wrapper), [launcher.md](launcher.md)).
 
 Documentation can be spread over several repos (a federation): one **hub** repo holds the Feature Records, and
 **satellite** repos hold `Satellite Note`s that belong to a feature recorded in the hub. A single repo needs none
@@ -29,9 +30,9 @@ of this: it uses `index`, `check` and `impact` and leaves `hub_repo` and `satell
 ## CLI
 
 ```
-okf <index|check|impact|xcheck|version|init> [options] (--help / -h anywhere: print the usage)
+okf <index|check|impact|xcheck|version|init|wrapper> [options] (--help / -h anywhere: print the usage)
 
-  --repo=<dir>             git work-tree root holding okf.yaml (init writes it there)   [index, check, impact, xcheck, init]
+  --repo=<dir>             git work-tree root holding okf.yaml (init writes it there)   [all but version]
                            (default: working directory)
   --strict                 files without frontmatter are failures                       [check]
   --refs-strict            broken code references are failures                          [check]
@@ -47,9 +48,12 @@ okf <index|check|impact|xcheck|version|init> [options] (--help / -h anywhere: pr
   --name=<repo>            repository name (default: the name of the --repo directory)   [init]
   --docs-root=<dir>        repo-relative directory of the bundle (default: docs)         [init]
   --index-command=<command>
-                           the one-line command that regenerates the indexes             [init, required]
+                           the one-line command that regenerates the indexes             [init]
+                           (default: ./okfw index; required with --launcher=false)
   --adopt                  use a docs root that already holds documents as the bundle    [init]
                            (no existing file is changed)
+  --launcher               also write the launcher okfw / okfw.cmd, its pin and          [init]
+                           .gitattributes (default: true)
 ```
 
 Boolean flags are `--flag` (true) or `--flag=true|false`; any other value is a usage error. Value
@@ -62,7 +66,8 @@ complete, e.g. broken frontmatter for `index`, git not runnable), `2` usage, `--
 For `xcheck`, `0` also covers drift warnings only, and `2` also a missing or misconfigured satellite checkout.
 For `init`, `1` means a conflict, a Markdown file in the docs root that cannot be read, or a failed write (nothing
 is left written), and `2` also an invalid `--name`, `--docs-root` (including the control-character and
-trailing-dot/blank rule) or `--index-command`.
+trailing-dot/blank rule) or `--index-command`. For `wrapper`, `1` means a file in the way that is not an okf-cli
+launcher (nothing written) or a failed write.
 Info lines and annotations go to stdout, warnings and failures to stderr. Under GitHub Actions
 (`GITHUB_ACTIONS=true`) the code-reference findings of `check` and the findings of `impact` are also printed as
 `::warning` / `::error` workflow commands, so they show up as annotations on the offending doc line.
@@ -142,19 +147,21 @@ is broken:
 
 `okf init` ([Starting a bundle](#starting-a-bundle-okf-init)), where `<docs_root>` is the docs root as given:
 
-- `okf init: <message>` on stderr (exit `2`) for a missing `--index-command`, an invalid `--name`, a `--docs-root`
-  with a control character or a segment ending in `.` or a blank, a `--docs-root` that collides with `okf.yaml` or
-  `.git`, and a value that `okf.yaml` rejects (`okf init: okf.yaml: …`) or that would not read back as given:
-  - `okf init: --index-command=<command> is required: the one-line command that regenerates the indexes in this repository`
+- `okf init: <message>` on stderr (exit `2`) for a missing `--index-command` (with `--launcher=false`), an invalid
+  `--name`, a `--docs-root` with a control character or a segment ending in `.` or a blank, a `--docs-root` that
+  collides with a file `init` writes or `.git`, and a value that `okf.yaml` rejects (`okf init: okf.yaml: …`) or that
+  would not read back as given:
+  - `okf init: --index-command=<command> is required: the one-line command that regenerates the indexes in this repository (with --launcher=false)`
   - `okf init: --name '<value>' must be a repository name (letters, digits, '.', '_' or '-')`
   - `okf init: the directory name '<value>' cannot be the repository name (letters, digits, '.', '_' or '-') — pass --name=<repo>`
   - `okf init: --docs-root '<value>' must not contain control characters or a segment ending in '.' or a blank`
-  - `okf init: --docs-root '<value>' collides with <path>` (`<path>` is `okf.yaml` or `.git`)
+  - `okf init: --docs-root '<value>' collides with <path>` (`<path>` is `okf.yaml`, `.git` or, with the launcher,
+    `okfw`, `okfw.cmd`, the pin file `<repo>/okf-wrapper.properties` or `.gitattributes`)
   - `okf init: --<option> '<value>' cannot be written to okf.yaml as given` (`<option>` is `docs-root` or
     `index-command`)
 - on a conflict, one block on stderr (exit `1`): `okf init found N problem(s); nothing was written:`, then one line
   `  - <problem>` per problem, in this order:
-  - `okf.yaml already exists — this repository is already set up`
+  - `okf.yaml already exists — this repository is already set up (okf wrapper adds or refreshes the launcher)`
   - `<path> exists and is not a directory` (the docs root or one of its parent directories)
   - `<docs_root>/ already holds M Markdown file(s) (A without frontmatter, B with frontmatter, C with invalid frontmatter, D non-root index.md with frontmatter) — pass --adopt to use it as the bundle (no existing file is changed), or --docs-root=<dir> for a separate bundle`
     (without `--adopt`)
@@ -162,31 +169,67 @@ is broken:
     (without `--adopt`; `<sub>` is `adr`, then `features`, one line each; `<dir>` is printed as is)
   - `<docs_root>/index.md exists but is not a bundle root: <problem>` (with `--adopt`; the first problem `okf check`
     would report for it)
+  - `<file> already exists — init never replaces it; run okf wrapper to refresh an okf-cli launcher, or pass --launcher=false`
+    (with the launcher; `<file>` is `okfw`, then `okfw.cmd`, an okf-cli launcher that differs from the one this version
+    writes)
+  - `<file> exists and is not an okf-cli launcher — move it away, or pass --launcher=false` (with the launcher, for
+    any other file or directory at that path)
 - `okf init: cannot read <path>: <reason>` on stderr (exit `1`, nothing written) when a Markdown file in the docs
   root cannot be read, and `okf init: cannot write <path>: <reason>; the files created by this run were removed`
   (exit `1`) when a write fails midway; in both, `<reason>` comes from the operating system or the Java runtime;
 - otherwise, on stdout:
-  - `[created] <path>` or `[kept] <path>` per file, repo-relative, in write order (`okf.yaml` first);
+  - `[created] <path>` or `[kept] <path>` per file, repo-relative, in write order: `okf.yaml`, `<docs_root>/index.md`,
+    then with the launcher `okfw`, `okfw.cmd`, the pin `<repo>/okf-wrapper.properties` and `.gitattributes`, as for
+    [`okf wrapper`](#the-launcher-okf-wrapper) but create-only (an existing launcher file identical to the one this
+    version writes, and an existing pin, are `[kept]`; an existing `.gitattributes` gets no line);
   - `OKF INFO: <docs_root>/ holds M Markdown file(s) that were not changed; okf check --strict lists what to migrate.`
     (with `--adopt`, when the docs root holds Markdown files besides a kept `index.md`);
   - `OKF INFO: <docs_root>/<sub>/index.md is generated: <index_command> creates or replaces it.` (with `--adopt`,
     `<sub>` is `adr`, then `features`, one line each for an existing directory; control characters and line
     separators in `<index_command>` are shown as `\uNNNN`);
+  - with the launcher, the `OKF INFO` lines of `okf wrapper` about the pin and `.gitattributes`, and the one about
+    `git add --chmod=+x okfw` when `okfw` was created;
   - `okf init OK: N file(s) created.`
+
+`okf wrapper` ([The launcher](#the-launcher-okf-wrapper)):
+
+- on a file in the way, one block on stderr (exit `1`): `okf wrapper found N problem(s); nothing was written:`, then
+  one line per file, `okfw` before `okfw.cmd`:
+  `  - <file> exists and is not an okf-cli launcher — move it away and run okf wrapper again`;
+- `okf wrapper: cannot read <file>: <reason>` on stderr (exit `1`, nothing written) when an existing `okfw` or
+  `okfw.cmd`, or the running release jar for the pin (a corrupt or unreadable jar), cannot be read (`okf init`
+  reports the same as `okf init: cannot read …`);
+- `okf wrapper: cannot write <path>: <reason>; the files created by this run were removed` on stderr (exit `1`)
+  when a write fails midway (`<reason>` comes from the operating system or the Java runtime; a file already
+  `[updated]` keeps its new content, which is a valid launcher);
+- otherwise, on stdout:
+  - one line per file, in this order: `okfw` and `okfw.cmd` as `[created]`, `[updated]` or `[unchanged]`;
+    the pin as `[created] okf-wrapper.properties` or `[kept] okf-wrapper.properties`, or no line when no pin is
+    written; `.gitattributes` as `[created]`, or no line when it exists;
+  - `OKF INFO: no pin written: okf-cli <version> is not a released build; run ./okfw --update <version> to pin a release.`
+    (no pin exists and this is not the `all` jar of a release; the second `<version>` is printed as is);
+  - `OKF INFO: add to .gitattributes: /okfw text eol=lf, /okfw.cmd text eol=crlf, /okf-wrapper.properties text eol=lf`
+    (an existing `.gitattributes` lacks one of these lines);
+  - `OKF INFO: commit the launcher as executable: git add --chmod=+x okfw`;
+  - `okf wrapper OK: N file(s) written.` (`N` counts `[created]` and `[updated]`).
 
 ## Starting a bundle (`okf init`)
 
 ```bash
-java -jar okf-cli-<version>-all.jar init --repo=. --index-command="java -jar tools/okf.jar index"
+java -jar okf-cli-<version>-all.jar init
+java -jar okf-cli-<version>-all.jar init --launcher=false --index-command="java -jar tools/okf.jar index"
 ```
 
 `okf init` writes the two files a bundle needs: `okf.yaml` at the work-tree root and the bundle-root
 `<docs_root>/index.md` (frontmatter `okf_version: "0.2"`, a title and one sentence). It creates the docs root and
-its parent directories as needed and adds nothing else (no `adr/` or `features/`). `--repo` must be the git
-work-tree root, as for the other commands; `okf.yaml` is not read.
+its parent directories as needed and adds no other bundle file (no `adr/` or `features/`). Unless `--launcher=false`,
+it also writes the launcher `okfw` / `okfw.cmd`, the pin and `.gitattributes` as
+[`okf wrapper`](#the-launcher-okf-wrapper) does, but create-only (below). `--repo` must be the git work-tree root, as
+for the other commands; `okf.yaml` is not read.
 
-- `--index-command=<command>` is required: the one-line command that regenerates the indexes in this repository,
-  written as `index_command` (it is rendered into the generated indexes and every "run …" hint).
+- `--index-command=<command>` is the one-line command that regenerates the indexes in this repository, written as
+  `index_command` (it is rendered into the generated indexes and every "run …" hint). With the launcher it defaults to
+  `./okfw index`, which works in `sh`, Git Bash and PowerShell; with `--launcher=false` it is required.
 - `--name=<repo>` is written as `repo`; by default the name of the `--repo` directory. A repository name holds
   letters, digits, `.`, `_` or `-` and is not `.` or `..`.
 - `--docs-root=<dir>` is written as `docs_root` when it is not `docs` (the default); it follows the `docs_root`
@@ -200,18 +243,48 @@ work-tree root, as for the other commands; `okf.yaml` is not read.
 
 It never changes an existing file, and it is all or nothing: every conflict is reported in one block before
 anything is written (exit `1`), and when a write fails midway the files and directories this run created are
-removed again. Conflicts are an existing `okf.yaml` (the repository is already set up), a docs root or parent
-directory that is a file, and, without `--adopt`, a docs root that already holds documentation.
+removed again. Conflicts are an existing `okf.yaml` (the repository is already set up; `okf wrapper` adds the
+launcher to such a repository), a docs root or parent directory that is a file, without `--adopt` a docs root that
+already holds documentation, and with the launcher a launcher file in the way: `init` keeps an `okfw` or `okfw.cmd`
+that is identical to the one it would write (`[kept]`) and never replaces another one (`okf wrapper` refreshes an
+okf-cli launcher). An existing pin is kept as it is, and an existing `.gitattributes` is never changed.
 
 A **repository without documentation** is one whose docs root is absent, or exists holding no `.md` file and no
 `adr/` or `features/` directory. There `okf init` needs no `--adopt`, and the bundle it creates passes
-`okf check --strict --refs-strict --code-paths-required` of the same version right away, before a commit.
+`okf check --strict --refs-strict --code-paths-required` of the same version right away, before a commit, with the
+launcher and with `--launcher=false`.
 
 `--adopt` uses a docs root that already holds documentation as the bundle. No existing file is changed: a valid
 bundle-root `index.md` is kept (`[kept]`), and one that `okf check` would reject is a conflict. The documents
 found are named in an info line (`okf check --strict` lists the ones without frontmatter), and an existing `adr/`
 or `features/` gets one too, because `okf check` then requires its generated `index.md`, which the index command
 creates or replaces. The strict check passing right after `init` is not promised for an adopted docs root.
+
+## The launcher (`okf wrapper`)
+
+```bash
+java -jar okf-cli-<version>-all.jar wrapper
+```
+
+`okf wrapper` writes the launcher into the work-tree root: `okfw`, a POSIX `sh` script, and `okfw.cmd`, which runs
+it from `cmd` and PowerShell with Git for Windows' `sh.exe`. `./okfw <okf arguments>` runs the okf-cli version that
+the pin file `<repo>/okf-wrapper.properties` names, downloaded once and checked against the pinned SHA-256 before every
+run. What the launcher does, the pin file's grammar, its messages and exit codes are in [launcher.md](launcher.md).
+`--repo` must be the git work-tree root; `okf.yaml` is not needed.
+
+- `okfw` and `okfw.cmd` are the copies embedded in the running jar, written with LF and CRLF line ends. An absent one
+  is created; an identical one is `[unchanged]`; one that carries the launcher marker (`okf-cli launcher` within its
+  first three lines) but differs (an older launcher revision, a copy checked out with CRLF) is replaced (`[updated]`);
+  anything else at that path is a problem, and then nothing is written. `okfw` gets the executable bit where the
+  file system has one; `git add --chmod=+x okfw` records it in git on every system.
+- The pin is written only when there is none and the running jar is the `all` jar of a release (a jar whose manifest
+  names `com.sharpbitstudio.okf.cli.Main`, with a release version: SemVer 2.0 without build metadata or a leading `v`,
+  and not a `-SNAPSHOT`); it then
+  records that jar's own version and SHA-256. An existing pin is never read or changed. A build that is not a release
+  writes no pin and says how to pin a release.
+- `.gitattributes` is created with three lines (`/okfw text eol=lf`, `/okfw.cmd text eol=crlf`,
+  `/okf-wrapper.properties text eol=lf`) when it is absent. An existing one is never changed; when it lacks one of
+  these lines (compared after trimming), an info line names them.
 
 ## `okf.yaml` (schema v1)
 
@@ -378,7 +451,9 @@ java -jar okf-cli-<version>-all.jar check --repo=. --strict --refs-strict --code
 ```
 
 Download the jar from the [releases page](https://github.com/sharpbitstudio/okf-cli/releases) and verify it
-([build-release.md](build-release.md#release)), or build it from source.
+([build-release.md](build-release.md#release)), or build it from source. In a repository with the launcher
+(`okf init` or `okf wrapper`), `./okfw <command> …` runs the pinned version without a manual download
+([launcher.md](launcher.md)).
 
 A Gradle repo can wrap the jar in `JavaExec` tasks. A sketch over a local copy of the jar, with one
 `-Pokf.*` property per option:
@@ -428,10 +503,23 @@ With these task names, `index_command: ./gradlew okfIndex` names the task that r
     `adr_status` values, the commands): a minor version may add an entry, and the message then names it. The
     built-in document types do not change within a major version;
   - the usage text printed by `--help` and after a usage error.
-- `okf init`: its options, exit codes and console lines, which files it creates for a given command line and
-  repository state, and that it never changes an existing file are covered; a bundle it creates in a repository
-  without documentation passes `okf check --strict --refs-strict --code-paths-required` of the same version. The
-  text of the files it writes is not covered: a later version may write better ones.
+- `okf init` and `okf wrapper`: their options, exit codes and console lines, which files they create for a given
+  command line and repository state, and that they never change a file they did not generate, are covered. A bundle
+  that `okf init` creates in a repository without documentation passes
+  `okf check --strict --refs-strict --code-paths-required` of the same version. The text of the starter files and of
+  the launcher scripts is not covered: a later version may write better ones, and files already written change only
+  through `okf wrapper`.
+- The launcher files a version embeds carry a launcher revision number and may improve between versions; for the
+  same repository, `okf wrapper` of a later version may therefore report `[updated]` where an earlier one reported
+  `[unchanged]`. The wording and format of its lines stay covered.
+- The pin file: its name, its place at the repository root, the keys `version` and `sha256` and its grammar do not
+  change within a major version; a launcher of the same major version reads every pin written by one.
+- The launcher ([launcher.md](launcher.md)): its command line (`okfw <okf arguments>`; `--update` and `--verify` as
+  the first argument are reserved for the launcher), the variables `OKFW_PIN` and `OKFW_CACHE_DIR`, its exit codes
+  (`2` and `3` for its own errors, the tool's code otherwise) and its own `okfw: …` messages are covered; so is that
+  it prints nothing on standard output when it runs a command, downloads only from this project's release assets over
+  HTTPS, and checks the pinned SHA-256 before every run. Output of `curl`, `sh.exe` and Java, and the cache layout, are
+  not.
 - Input that a version rejects may be valid in a later minor version: a new optional key or a new allowed value
   turns the former `okf.yaml` error (exit `2`) or finding into accepted input. The other direction is covered by
   the first rule: input that is valid stays valid, with the same output.

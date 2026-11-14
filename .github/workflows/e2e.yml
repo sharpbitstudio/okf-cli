@@ -1,0 +1,126 @@
+name: e2e
+
+on:
+  # Manual trigger (gh workflow run / Actions UI). GitHub only exposes workflow_dispatch
+  # once this file is on the default branch.
+  workflow_dispatch:
+  # A push to any branch of this repository (Dependabot's included) runs these jobs; a PR from a branch of this
+  # repository needs no second run for the same SHA.
+  push:
+    branches:
+      - '**'
+  # PRs from forks, whose branches are never pushed here: the job-level `if` below skips PRs from
+  # branches of this repository (their push run covers them). A fork PR runs with a read-only token and
+  # no secrets; never use pull_request_target here.
+  pull_request:
+
+# A newer push to the same branch cancels the older, still-running run, except on main, where every
+# pushed commit gets its own complete run. Its own group, so it never cancels a `build` run.
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+permissions:
+  contents: read
+
+# The launcher (launcher/okfw, launcher/okfw.cmd; docs/launcher.md) on the three runner systems: the whole test suite
+# (the hermetic launcher tests run the script under each system's sh: dash, macOS /bin/sh, Git for Windows' sh.exe,
+# and okfw.cmd under cmd and PowerShell on Windows) plus `networkTest`, which downloads the published
+# 1.0.0-alpha.1 with real curl. These jobs are not required checks.
+jobs:
+  launcher:
+    # A PR from a branch of this repo is covered by that branch's push run, so its pull_request job is skipped (see
+    # `if`) and gets another name. The `name` condition must stay the exact negation of `if`.
+    # A skipped job has no matrix, so its name names no system.
+    name: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && 'Skipped on same-repo PR (see push run) - Launcher' || format('Launcher ({0})', matrix.os) }}
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Nothing in this job talks to the remote after the checkout.
+          persist-credentials: false
+
+      - name: Set up JDK 25 (Temurin)
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 25
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6.4.1
+        with:
+          # Validates the checked-in wrapper jar against known-good checksums and caches ~/.gradle.
+          validate-wrappers: true
+          cache-cleanup: on-success
+
+      - name: Tools on this runner
+        shell: bash
+        run: |
+          java -version
+          gh --version || true
+
+      - name: Build + test + network test
+        shell: bash
+        run: ./gradlew build networkTest --stacktrace
+
+      - name: Upload test reports
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-reports-launcher-${{ matrix.os }}
+          path: |
+            build/reports/tests/
+            build/test-results/
+          retention-days: 7
+          if-no-files-found: ignore
+
+  launcher-release-version:
+    # A release build: the jar then writes the pin itself (LauncherJarTest asserts by version), so a version-dependent
+    # assertion cannot fail first in a release run. Skipped on a same-repo PR as above.
+    name: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && 'Skipped on same-repo PR (see push run) - Launcher (release-like version)' || 'Launcher (release-like version)' }}
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up JDK 25 (Temurin)
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 25
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6.4.1
+        with:
+          validate-wrappers: true
+          cache-cleanup: on-success
+
+      - name: shellcheck
+        shell: bash
+        run: shellcheck -s sh launcher/okfw
+
+      - name: Build + test as a release-like version
+        shell: bash
+        run: ./gradlew build -Pversion=0.0.0-e2e.1 --stacktrace
+
+      - name: Upload test reports
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-reports-launcher-release-version
+          path: |
+            build/reports/tests/
+            build/test-results/
+          retention-days: 7
+          if-no-files-found: ignore

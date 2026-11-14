@@ -9,14 +9,15 @@ enum class Command(val cliName: String, val options: Set<String>) {
     IMPACT("impact", setOf(CliArgs.REPO, CliArgs.BASE, CliArgs.IMPACT_STRICT)),
     XCHECK("xcheck", setOf(CliArgs.REPO, CliArgs.WORKSPACE, CliArgs.REPORT)),
     VERSION("version", emptySet()),
-    INIT("init", setOf(CliArgs.REPO, CliArgs.NAME, CliArgs.DOCS_ROOT, CliArgs.INDEX_COMMAND, CliArgs.ADOPT)),
+    INIT("init", setOf(CliArgs.REPO, CliArgs.NAME, CliArgs.DOCS_ROOT, CliArgs.INDEX_COMMAND, CliArgs.ADOPT, CliArgs.LAUNCHER)),
+    WRAPPER("wrapper", setOf(CliArgs.REPO)),
 }
 
 /** Bad command line; the CLI prints the message and the usage and exits with [OkfCli.EXIT_USAGE]. */
 class UsageException(message: String) : RuntimeException(message)
 
 /**
- * A parsed command line: `okf <index|check|impact|xcheck|version|init> [options]`. Boolean flags are `--flag`
+ * A parsed command line: `okf <index|check|impact|xcheck|version|init|wrapper> [options]`. Boolean flags are `--flag`
  * (= true) or `--flag=true|false` (strictly — a typo such as `--strict=ture` is a usage error).
  * Value options take `--opt=<value>` or `--opt <value>`
  * (the space form never takes a value starting with `--`; an empty value needs the `=` form or an empty argument).
@@ -39,10 +40,12 @@ data class CliArgs(
     val name: String? = null,
     /** `--docs-root` (`init`): the repo-relative bundle directory as given; `null` = the default `docs`. */
     val docsRoot: String? = null,
-    /** `--index-command` (`init`): the command written as `index_command`, as given. */
+    /** `--index-command` (`init`): the command written as `index_command`, as given; `null` = the launcher's default. */
     val indexCommand: String? = null,
     /** `--adopt` (`init`): an existing docs root holding documents becomes the bundle. */
     val adopt: Boolean = false,
+    /** `--launcher` (`init`, default `true`): also write the launcher `okfw` / `okfw.cmd`, its pin and `.gitattributes`. */
+    val launcher: Boolean = true,
 ) {
     companion object {
         const val REPO = "--repo"
@@ -57,9 +60,10 @@ data class CliArgs(
         const val DOCS_ROOT = "--docs-root"
         const val INDEX_COMMAND = "--index-command"
         const val ADOPT = "--adopt"
+        const val LAUNCHER = "--launcher"
 
         private val VALUE_OPTIONS = setOf(REPO, BASE, WORKSPACE, REPORT, NAME, DOCS_ROOT, INDEX_COMMAND)
-        private val FLAGS = setOf(STRICT, REFS_STRICT, CODE_PATHS_REQUIRED, IMPACT_STRICT, ADOPT)
+        private val FLAGS = setOf(STRICT, REFS_STRICT, CODE_PATHS_REQUIRED, IMPACT_STRICT, ADOPT, LAUNCHER)
 
         /** Parses [args]; a relative `--repo`, `--workspace` or `--report` resolves against [cwd]. Throws [UsageException]. */
         fun parse(args: List<String>, cwd: File): CliArgs {
@@ -97,8 +101,8 @@ data class CliArgs(
             val repo = file(REPO) ?: cwd
             val workspace = file(WORKSPACE)
             if (cmd == Command.XCHECK && workspace == null) throw UsageException("$WORKSPACE=<dir> is required for `okf ${cmd.cliName}`")
-            fun flag(name: String): Boolean {
-                val raw = values[name] ?: return false
+            fun flag(name: String, default: Boolean = false): Boolean {
+                val raw = values[name] ?: return default
                 return raw.toBooleanStrictOrNull() ?: throw UsageException("$name must be 'true' or 'false', got '$raw'")
             }
             return CliArgs(
@@ -115,6 +119,7 @@ data class CliArgs(
                 docsRoot = values[DOCS_ROOT],
                 indexCommand = values[INDEX_COMMAND],
                 adopt = flag(ADOPT),
+                launcher = flag(LAUNCHER, default = true),
             )
         }
     }
