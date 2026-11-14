@@ -176,7 +176,8 @@ object OkfChecker {
         )
     }
 
-    private fun checkRootIndex(fm: Frontmatter): List<String> =
+    /** The problems of a bundle-root index.md with frontmatter [fm]; empty when it is valid (also used by `okf init --adopt`). */
+    internal fun checkRootIndex(fm: Frontmatter): List<String> =
         when (fm) {
             Frontmatter.Absent -> listOf("bundle-root index.md must start with frontmatter `okf_version: \"0.2\"`")
             is Frontmatter.Invalid -> listOf(fm.reason)

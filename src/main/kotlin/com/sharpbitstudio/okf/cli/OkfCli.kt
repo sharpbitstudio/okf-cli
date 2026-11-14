@@ -26,7 +26,8 @@ import java.util.Properties
 /**
  * The `okf` command line: `index` regenerates the bundle's sub-indexes, `check` validates the bundle
  * ([OkfChecker] + [OkfRefChecker]), `impact` reports docs made stale by code changes ([OkfImpact]),
- * `xcheck` checks the hub and its satellites together ([OkfXcheck]).
+ * `xcheck` checks the hub and its satellites together ([OkfXcheck]), `init` writes `okf.yaml` and the bundle root for a
+ * new bundle ([OkfInit]).
  * Console lines and GitHub Actions annotations are part of the output contract: info lines
  * and annotations on [out], warnings and failures on [err]. Exit codes: [EXIT_OK], [EXIT_FINDINGS]
  * (findings that fail under the given strictness, or an operation that cannot complete — broken
@@ -63,6 +64,8 @@ class OkfCli(
         }
         return try {
             requireWorkTreeRoot(parsed.repo)
+            // `init` writes okf.yaml and the bundle, so it neither loads nor requires them.
+            if (parsed.command == Command.INIT) return OkfInit(out, err).run(parsed)
             val config = OkfConfig.load(parsed.repo)
             val bundle = config.bundleDir(parsed.repo)
             if (!bundle.isDirectory) throw OkfConfigException("docs_root '${config.docsRoot}' is not a directory in ${parsed.repo.path}")
@@ -71,7 +74,7 @@ class OkfCli(
                 Command.CHECK -> check(parsed, bundle, config)
                 Command.IMPACT -> impact(parsed, bundle, config)
                 Command.XCHECK -> xcheck(parsed, config)
-                Command.VERSION -> error("handled above")
+                Command.VERSION, Command.INIT -> error("handled above")
             }
         } catch (e: OkfConfigException) {
             err.println("okf ${parsed.command.cliName}: ${e.message}")
@@ -348,9 +351,10 @@ class OkfCli(
             |  xcheck    check the hub and its satellites together (run in the hub): cross-repo code references,
             |            hub:/repos: links, drift of hub records, satellite index URLs
             |  version   print the tool version
+            |  init      write okf.yaml and the bundle-root index.md for a new bundle; never overwrites
             |
             |Options (boolean flags: bare = true, or =true|false):
-            |  --repo=<dir>                git work-tree root holding okf.yaml                           [index, check, impact, xcheck]
+            |  --repo=<dir>                git work-tree root holding okf.yaml (init writes it there)    [index, check, impact, xcheck, init]
             |                              (default: working directory)
             |  --strict                    files without frontmatter are failures                        [check]
             |  --refs-strict               broken code references are failures                           [check]
@@ -363,6 +367,11 @@ class OkfCli(
             |  --workspace=<dir>           directory holding every satellite checkout as <dir>/<repo>    [xcheck, required]
             |  --report=<file>             Markdown report, written when there are findings and deleted  [xcheck]
             |                              after a clean run
+            |  --name=<repo>               repository name (default: the name of the --repo directory)   [init]
+            |  --docs-root=<dir>           repo-relative directory of the bundle (default: docs)         [init]
+            |  --index-command=<command>   the one-line command that regenerates the indexes             [init, required]
+            |  --adopt                     use a docs root that already holds documents as the bundle    [init]
+            |                              (no existing file is changed)
             |
             |Exit codes: 0 OK, 1 findings (or the command could not complete), 2 usage or okf.yaml error
             |(xcheck: 0 also with drift warnings only; 2 also for a missing or misconfigured satellite checkout).

@@ -57,7 +57,8 @@ ADR index links `adr/README.md` only when that file exists (`adr_readme_link`). 
 `index_language` and `index_command` and has no `adr/`, so it gives the same result with either; a bundle with
 `adr/` but no `adr/README.md` loses that link on upgrade unless it sets `adr_readme_link: always`. `main` also
 knows `okf.yaml` keys that `1.0.0-alpha.1` rejects as unknown: `base_ref`, `extra_types`, `drift_days`,
-`adr_readme_link`.
+`adr_readme_link`. `main` also has the new command `okf init` (it writes `okf.yaml` and the bundle root for a new
+bundle), which no release has yet.
 
 ## Quick start
 
