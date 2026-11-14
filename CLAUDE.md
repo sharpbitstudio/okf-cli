@@ -2,16 +2,19 @@
 
 `okf-cli` builds `okf`, a Kotlin CLI that keeps an OKF (Open Knowledge Format) v0.2 docs bundle consistent with
 the code: `okf index|check|impact` work on one repo's bundle, `okf xcheck` checks a hub repo and its satellites
-together, `okf init` writes `okf.yaml` and the bundle root for a new bundle, `okf version` prints
+together, `okf init` writes `okf.yaml` and the bundle root for a new bundle, `okf wrapper` writes the launcher
+`okfw` (`launcher/`, embedded in the jar) that runs the version a repo pins, `okf version` prints
 `okf-cli <version>`. Documentation lives in the repo's own OKF bundle:
 `docs/index.md`; CLI, `okf.yaml` schema, bundle rules and the compatibility contract in `docs/reference.md`;
-build, CI, release and third-party licences in `docs/build-release.md`. `README.md` is only the landing page;
+the launcher and its pin file in `docs/launcher.md`; build, CI, release and third-party licences in
+`docs/build-release.md`. `README.md` is only the landing page;
 `CHANGELOG.md` records every change per version.
 
 ## Commands
 
 ```bash
 ./gradlew build                                  # tests + thin/sources/all jars (CI gate)
+./gradlew networkTest                            # launcher against a published release (network; e2e workflow)
 java -jar build/libs/okf-cli-<version>-all.jar version
 ./gradlew okfIndex okfCheck okfImpact -Pokf.strict=true -Pokf.refs.strict=true -Pokf.codePaths.required=true -Pokf.impact.strict=true   # own docs/, as CI
 ```
@@ -24,7 +27,7 @@ java -jar build/libs/okf-cli-<version>-all.jar version
   fails `okfImpact` on a branch until the reference is updated in the same branch. Alternatively, add a
   `Docs-Impact: reference — <reason>` trailer, which fits pure refactors.
 - `docs/build-release.md` covers `build.gradle.kts`, the workflows, `LICENSE`, `NOTICE` and
-  `third-party-licenses/`.
+  `third-party-licenses/`; `docs/launcher.md` covers `launcher/`.
 
 ## Conventions
 
@@ -34,6 +37,8 @@ java -jar build/libs/okf-cli-<version>-all.jar version
 - Console lines and `::warning` / `::error` annotations are a contract (CI logs, PR annotations), like the
   findings, exit codes and generated indexes.
 - Anything repo-specific goes through `okf.yaml` (`OkfConfig`), never a new hard-coded constant.
+- The launcher (`launcher/okfw`, `launcher/okfw.cmd`) and the GitHub Actions only fetch, verify and invoke the jar;
+  every check stays in the jar.
 - Third-party licences: the `all` jar bundles the Kotlin stdlib (with its own third-party parts), JetBrains
   Annotations and SnakeYAML; their licence texts live verbatim in `third-party-licenses/` and are named in
   `NOTICE`. After any bump of a runtime dependency, re-check that inventory against the upstream licence README

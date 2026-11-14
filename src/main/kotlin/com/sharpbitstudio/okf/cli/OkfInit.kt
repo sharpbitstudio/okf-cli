@@ -19,26 +19,36 @@ import java.nio.file.FileSystemException
 import java.nio.file.Files
 import java.nio.file.InvalidPathException
 import java.nio.file.LinkOption
+import java.nio.file.StandardCopyOption
 import java.nio.file.StandardOpenOption
 
 /**
- * `okf init`: writes `okf.yaml` and the bundle-root `<docs_root>/index.md` for a new bundle, all or nothing. It never
- * changes an existing file: anything in the way is reported as a conflict (exit [OkfCli.EXIT_FINDINGS]) before a file
- * is written, and a write that fails midway removes what this run created. An invalid `--name`, `--docs-root` or
- * `--index-command` is an [OkfConfigException] (exit [OkfCli.EXIT_USAGE]); the values are validated by parsing the
- * `okf.yaml` text about to be written ([OkfConfig.parse]) and must read back unchanged. With `--adopt`, an existing docs
- * root holding documents becomes the bundle; its files stay as they are, and a valid bundle-root `index.md` is kept.
+ * `okf init`: writes `okf.yaml` and the bundle-root `<docs_root>/index.md` for a new bundle, and unless
+ * `--launcher=false` the launcher files, the pin and `.gitattributes` as `okf wrapper` writes them ([OkfWrapper]), all or
+ * nothing. It never changes an existing file: anything in the way is reported as a conflict (exit
+ * [OkfCli.EXIT_FINDINGS]) before a file is written, and a write that fails midway removes what this run created; an
+ * existing launcher file identical to the embedded one, an existing pin and an existing `.gitattributes` are kept. An
+ * invalid `--name`, `--docs-root` or `--index-command` is an [OkfConfigException] (exit [OkfCli.EXIT_USAGE]); the values
+ * are validated by parsing the `okf.yaml` text about to be written ([OkfConfig.parse]) and must read back unchanged.
+ * With `--adopt`, an existing docs root holding documents becomes the bundle; its files stay as they are, and a valid
+ * bundle-root `index.md` is kept.
  */
-internal class OkfInit(private val out: PrintStream, private val err: PrintStream) {
+internal class OkfInit(private val out: PrintStream, private val err: PrintStream, private val self: SelfJar) {
     /** Runs `okf init` for [args] in the work-tree root `args.repo` (already checked); returns the exit code. */
     fun run(args: CliArgs): Int {
         val repo = args.repo
+        val launcher = args.launcher
         val defaultName = args.name == null
         val name = args.name ?: repo.canonicalFile.name
         val docsRoot = args.docsRoot ?: OkfConfig.DEFAULT_DOCS_ROOT
-        val indexCommand = args.indexCommand ?: throw OkfConfigException(
-            "${CliArgs.INDEX_COMMAND}=<command> is required: the one-line command that regenerates the indexes in this repository",
-        )
+        val indexCommand = args.indexCommand ?: if (launcher) {
+            LAUNCHER_INDEX_COMMAND
+        } else {
+            throw OkfConfigException(
+                "${CliArgs.INDEX_COMMAND}=<command> is required: the one-line command that regenerates the indexes in this repository " +
+                    "(with ${CliArgs.LAUNCHER}=false)",
+            )
+        }
         if (!REPO_NAME.matches(name) || name == "." || name == "..") {
             throw OkfConfigException(
                 if (defaultName) {
@@ -52,21 +62,25 @@ internal class OkfInit(private val out: PrintStream, private val err: PrintStrea
         docsRootName(docsRoot)
         val config = renderConfig(name, docsRoot, indexCommand).toByteArray(Charsets.UTF_8)
         readBack(String(config, Charsets.UTF_8), name, docsRoot, indexCommand)
-        preflight(docsRoot)
+        preflight(docsRoot, launcher)
 
         val bundle = repo.resolve(docsRoot)
         val rootIndex = bundle.resolve(ROOT_INDEX_NAME)
         val markdown = if (bundle.isDirectory) bundle.walkTopDown().filter { it.isFile && it.extension == "md" }.toList() else emptyList()
         val subDirs = if (bundle.isDirectory) SUB_DIRS.filter { bundle.resolve(it).isDirectory } else emptyList()
-        val problems = conflicts(repo, docsRoot, bundle, markdown, subDirs, args.adopt)
+        val launcherStates = if (launcher) Launcher.files.map { it to Launcher.state(repo, it) } else emptyList()
+        val problems = conflicts(repo, docsRoot, bundle, markdown, subDirs, args.adopt) + launcherConflicts(launcherStates)
         if (problems.isNotEmpty()) {
             err.println("okf init found ${problems.size} problem(s); nothing was written:\n" + problems.joinToString("\n") { "  - $it" })
             return OkfCli.EXIT_FINDINGS
         }
 
         val keepIndex = args.adopt && rootIndex.isFile
+        val pinPresent = launcher && repo.resolve(Launcher.PIN).present()
+        val pin = if (launcher && !pinPresent) self.pin() else null
+        val attributesPresent = launcher && repo.resolve(Launcher.ATTRIBUTES).present()
         val lines = mutableListOf<String>()
-        write(repo) { created ->
+        writeAll(repo) { created ->
             created.file(OkfConfig.FILE_NAME, config)
             lines += "[created] ${OkfConfig.FILE_NAME}"
             if (keepIndex) {
@@ -76,6 +90,26 @@ internal class OkfInit(private val out: PrintStream, private val err: PrintStrea
                 created.file("$docsRoot/$ROOT_INDEX_NAME", ROOT_INDEX.toByteArray(Charsets.UTF_8))
                 lines += "[created] $docsRoot/$ROOT_INDEX_NAME"
             }
+            // The launcher as `okf wrapper` writes it, create-only: a differing launcher file is a conflict (above).
+            launcherStates.forEach { (file, state) ->
+                if (state == Launcher.State.ABSENT) {
+                    created.file(file.name, file.bytes, file.executable)
+                    lines += "[created] ${file.name}"
+                } else {
+                    lines += "[kept] ${file.name}"
+                }
+            }
+            when {
+                pinPresent -> lines += "[kept] ${Launcher.PIN}"
+                pin != null -> {
+                    created.file(Launcher.PIN, pin)
+                    lines += "[created] ${Launcher.PIN}"
+                }
+            }
+            if (launcher && !attributesPresent) {
+                created.file(Launcher.ATTRIBUTES, Launcher.ATTRIBUTES_TEXT.toByteArray(Charsets.US_ASCII))
+                lines += "[created] ${Launcher.ATTRIBUTES}"
+            }
         }
         lines.forEach(out::println)
         if (args.adopt) {
@@ -84,6 +118,11 @@ internal class OkfInit(private val out: PrintStream, private val err: PrintStrea
                 out.println("OKF INFO: $docsRoot/ holds $unchanged Markdown file(s) that were not changed; okf check ${CliArgs.STRICT} lists what to migrate.")
             }
             subDirs.forEach { out.println("OKF INFO: $docsRoot/$it/$ROOT_INDEX_NAME is generated: ${indexCommand.escapeControls()} creates or replaces it.") }
+        }
+        if (launcher) {
+            if (!pinPresent && pin == null) out.println(Launcher.noPinNotice(self.version))
+            if (attributesPresent && Launcher.attributesMissing(repo)) out.println(Launcher.ATTRIBUTES_NOTICE)
+            if (launcherStates.any { (file, state) -> file.executable && state == Launcher.State.ABSENT }) out.println(Launcher.CHMOD_NOTICE)
         }
         out.println("okf init OK: ${lines.count { it.startsWith("[created]") }} file(s) created.")
         return OkfCli.EXIT_OK
@@ -123,20 +162,23 @@ internal class OkfInit(private val out: PrintStream, private val err: PrintStrea
     }
 
     /**
-     * The docs root must not be, or lie below, `okf.yaml` (written by this run) or `.git`. Compared ignoring case, so
-     * the check does not depend on the file system.
+     * The docs root must not be, or lie below, `okf.yaml` (written by this run), `.git` or, with the launcher, a path the
+     * launcher writes ([Launcher.ROOT_PATHS]). Compared ignoring case, so the check does not depend on the file system.
      * The check is by spelling, not by file-system identity: short names and other aliases are not resolved.
      */
-    private fun preflight(docsRoot: String) {
+    private fun preflight(docsRoot: String, launcher: Boolean) {
         val first = docsRoot.substringBefore('/')
-        val collision = listOf(OkfConfig.FILE_NAME, GIT_DIR).firstOrNull { it.equals(first, ignoreCase = true) } ?: return
+        val reserved = listOf(OkfConfig.FILE_NAME, GIT_DIR) + if (launcher) Launcher.ROOT_PATHS else emptyList()
+        val collision = reserved.firstOrNull { it.equals(first, ignoreCase = true) } ?: return
         throw OkfConfigException("${CliArgs.DOCS_ROOT} '${docsRoot.escapeControls()}' collides with $collision")
     }
 
     /** Every reason not to write, in report order; empty when the run may write. */
     private fun conflicts(repo: File, docsRoot: String, bundle: File, markdown: List<File>, subDirs: List<String>, adopt: Boolean): List<String> =
         buildList {
-            if (repo.resolve(OkfConfig.FILE_NAME).present()) add("${OkfConfig.FILE_NAME} already exists — this repository is already set up")
+            if (repo.resolve(OkfConfig.FILE_NAME).present()) {
+                add("${OkfConfig.FILE_NAME} already exists — this repository is already set up (okf ${Command.WRAPPER.cliName} adds or refreshes the launcher)")
+            }
             val segments = docsRoot.split('/')
             segments.indices.map { segments.subList(0, it + 1).joinToString("/") }
                 .firstOrNull { repo.resolve(it).let { file -> file.present() && !file.isDirectory } }
@@ -152,6 +194,18 @@ internal class OkfInit(private val out: PrintStream, private val err: PrintStrea
                         add("$docsRoot/$ROOT_INDEX_NAME exists but is not a bundle root: $it")
                     }
                 }
+            }
+        }
+
+    /** A launcher file in the way: `init` never replaces one ([OkfWrapper] does, when it carries the marker). */
+    private fun launcherConflicts(states: List<Pair<Launcher.LauncherFile, Launcher.State>>): List<String> =
+        states.mapNotNull { (file, state) ->
+            when (state) {
+                Launcher.State.DIFFERENT ->
+                    "${file.name} already exists — init never replaces it; run okf ${Command.WRAPPER.cliName} to refresh an okf-cli launcher, " +
+                        "or pass ${CliArgs.LAUNCHER}=false"
+                Launcher.State.FOREIGN -> "${file.name} exists and is not an okf-cli launcher — move it away, or pass ${CliArgs.LAUNCHER}=false"
+                Launcher.State.ABSENT, Launcher.State.IDENTICAL -> null
             }
         }
 
@@ -182,59 +236,10 @@ internal class OkfInit(private val out: PrintStream, private val err: PrintStrea
             throw OkfException("cannot read ${file.relativeTo(repo).invariantSeparatorsPath}: ${reason(e)}")
         }
 
-    /**
-     * Runs [block], which creates files and directories through [Created] only; when one of them fails, everything
-     * created so far is deleted again (deepest first) and the failure is an [OkfException] naming the path.
-     */
-    private fun write(repo: File, block: (Created) -> Unit) {
-        val created = Created(repo)
-        fun failed(reason: String): Nothing {
-            created.paths.asReversed().forEach { runCatching { Files.deleteIfExists(it.toPath()) } }
-            throw OkfException("cannot write ${created.current}: $reason; the files created by this run were removed")
-        }
-        try {
-            block(created)
-        } catch (e: IOException) {
-            failed(reason(e))
-        } catch (e: InvalidPathException) {
-            // A name the file system cannot hold (e.g. `*` on Windows).
-            failed(e.reason ?: e::class.java.simpleName)
-        }
-    }
-
-    /** Creates repo-relative files and directories, never replacing one, and remembers what it created. */
-    private class Created(private val repo: File) {
-        /** What this run created, in creation order. */
-        val paths = mutableListOf<File>()
-
-        /** The repo-relative path being created. */
-        var current = ""
-            private set
-
-        fun file(path: String, bytes: ByteArray) {
-            current = path
-            val file = repo.resolve(path)
-            Files.newOutputStream(file.toPath(), StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE).use {
-                paths += file
-                it.write(bytes)
-            }
-        }
-
-        /** Creates [path] and each missing ancestor below the repo root. */
-        fun directories(path: String) {
-            val segments = path.split('/')
-            segments.indices.map { segments.subList(0, it + 1).joinToString("/") }.forEach { dir ->
-                val file = repo.resolve(dir)
-                if (!file.isDirectory) {
-                    current = dir
-                    Files.createDirectory(file.toPath())
-                    paths += file
-                }
-            }
-        }
-    }
-
     internal companion object {
+        /** The `index_command` written when the launcher is written and `--index-command` is absent. */
+        const val LAUNCHER_INDEX_COMMAND = "./okfw index"
+
         /** The bundle-root index file, the only file of the bundle that `init` writes. */
         private const val ROOT_INDEX_NAME = "index.md"
         private const val GIT_DIR = ".git"
@@ -315,21 +320,100 @@ internal class OkfInit(private val out: PrintStream, private val err: PrintStrea
         // OkfConfig itself would read it as text.
         private fun yaml(): Yaml = Yaml(SafeConstructor(LoaderOptions()))
 
-        /** The operating system's reason for [e]: [FileSystemException.reason], else the message, else the class name. */
-        private fun reason(e: IOException): String =
-            (if (e is FileSystemException) e.reason else e.message) ?: e::class.java.simpleName
-
         /** A control character, or a line or paragraph separator (U+2028, U+2029). */
         private fun Char.isLineBreakOrControl() = isISOControl() || code == 0x2028 || code == 0x2029
-
-        /** Whether anything (a broken link too) exists at this path; a name the file system cannot hold does not exist. */
-        private fun File.present(): Boolean =
-            try {
-                Files.exists(toPath(), LinkOption.NOFOLLOW_LINKS)
-            } catch (_: InvalidPathException) {
-                false
-            }
 
         private fun String.escapeControls() = map { if (it.isLineBreakOrControl()) "\\u%04x".format(it.code) else it.toString() }.joinToString("")
     }
 }
+
+/**
+ * Runs [block], which creates and replaces files and directories below [repo] through [RepoFiles] only; when one of them
+ * fails, everything created so far is deleted again (deepest first) and the failure is an [OkfException] naming the
+ * path. A replaced file cannot be restored, so callers replace only after they have created.
+ */
+internal fun writeAll(repo: File, block: (RepoFiles) -> Unit) {
+    val files = RepoFiles(repo)
+    fun failed(reason: String): Nothing {
+        files.created.asReversed().forEach { runCatching { Files.deleteIfExists(it.toPath()) } }
+        throw OkfException("cannot write ${files.current}: $reason; the files created by this run were removed")
+    }
+    try {
+        block(files)
+    } catch (e: IOException) {
+        failed(reason(e))
+    } catch (e: InvalidPathException) {
+        // A name the file system cannot hold (e.g. `*` on Windows).
+        failed(e.reason ?: e::class.java.simpleName)
+    }
+}
+
+/** Creates repo-relative files and directories, never replacing one unless asked to ([replace]), and remembers what it created. */
+internal class RepoFiles(private val repo: File) {
+    /** What this run created, in creation order. */
+    val created = mutableListOf<File>()
+
+    /** The repo-relative path being written. */
+    var current = ""
+        private set
+
+    /** Creates [path] with [bytes]; [executable] sets the executable bit for everyone (where the file system has one). */
+    fun file(path: String, bytes: ByteArray, executable: Boolean = false) {
+        current = path
+        val file = repo.resolve(path)
+        Files.newOutputStream(file.toPath(), StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE).use {
+            created += file
+            it.write(bytes)
+        }
+        if (executable) file.setExecutable(true, false)
+    }
+
+    /**
+     * Replaces the existing file [path] with [bytes]: written to a temporary file in the same directory, then moved over
+     * it. Where the move is refused (Windows, while another process such as `sh` running the launcher holds the file
+     * open), the file is rewritten in place instead.
+     */
+    fun replace(path: String, bytes: ByteArray, executable: Boolean = false) {
+        current = path
+        val target = repo.resolve(path).toPath()
+        val temp = Files.createTempFile(target.toAbsolutePath().parent, ".${target.fileName}.", ".tmp")
+        try {
+            Files.write(temp, bytes)
+            // createTempFile makes the file readable by its owner only.
+            temp.toFile().setReadable(true, false)
+            if (executable) temp.toFile().setExecutable(true, false)
+            try {
+                Files.move(temp, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
+            } catch (_: IOException) {
+                Files.write(target, bytes, StandardOpenOption.WRITE, StandardOpenOption.TRUNCATE_EXISTING)
+                if (executable) target.toFile().setExecutable(true, false)
+            }
+        } finally {
+            Files.deleteIfExists(temp)
+        }
+    }
+
+    /** Creates [path] and each missing ancestor below the repo root. */
+    fun directories(path: String) {
+        val segments = path.split('/')
+        segments.indices.map { segments.subList(0, it + 1).joinToString("/") }.forEach { dir ->
+            val file = repo.resolve(dir)
+            if (!file.isDirectory) {
+                current = dir
+                Files.createDirectory(file.toPath())
+                created += file
+            }
+        }
+    }
+}
+
+/** The operating system's reason for [e]: [FileSystemException.reason], else the message, else the class name. */
+internal fun reason(e: IOException): String = (if (e is FileSystemException) e.reason else e.message) ?: e::class.java.simpleName
+
+/** Whether anything (a broken link too) exists at this path; a name the file system cannot hold does not exist. */
+internal fun File.present(): Boolean =
+    try {
+        Files.exists(toPath(), LinkOption.NOFOLLOW_LINKS)
+    } catch (_: InvalidPathException) {
+        false
+    }

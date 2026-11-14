@@ -1,0 +1,236 @@
+#!/bin/sh
+# okf-cli launcher 1
+#
+# Runs the okf-cli version pinned in okf-wrapper.properties next to this file: downloads the release jar once into
+# a per-user cache, checks its SHA-256 against the pin before every run, and runs it with Java 17 or later. All
+# arguments go to okf-cli unchanged. Docs: https://github.com/sharpbitstudio/okf-cli/blob/main/docs/launcher.md
+#
+# Written by `okf wrapper` (and `okf init`); refresh it with `okf wrapper` rather than editing it. The whole script is
+# one function, called on the last line, so the file can be replaced while it runs.
+
+main() {
+  okfw_tmp=
+  trap okfw_cleanup EXIT
+  trap 'exit 129' HUP
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
+  okfw_dash=$(printf '\342\200\224')
+  # The shell itself works byte by byte: in a UTF-8 locale, bash's read would take a byte such as 0xE9 in the pin as the
+  # start of a character and swallow the line end after it. The caller's LC_ALL is restored before Java starts; tools
+  # that must not depend on the locale get LC_ALL=C for their own call.
+  okfw_lc_all_set=${LC_ALL+set}
+  okfw_lc_all=${LC_ALL-}
+  LC_ALL=C
+
+  case ${1-} in
+    --update | --verify) okfw_fail 2 '--update and --verify are not available in this launcher revision' ;;
+  esac
+
+  okfw_pin=${OKFW_PIN:-$(dirname "$0")/okf-wrapper.properties}
+  [ -f "$okfw_pin" ] || okfw_fail 2 "pin file not found: $okfw_pin $okfw_dash run okfw --update <version>"
+  okfw_read_pin "$okfw_pin"
+
+  if command -v sha256sum > /dev/null 2>&1; then
+    okfw_sha_tool=sha256sum
+  elif command -v shasum > /dev/null 2>&1; then
+    okfw_sha_tool=shasum
+  else
+    okfw_fail 3 'no SHA-256 tool found (sha256sum or shasum)'
+  fi
+
+  okfw_find_java
+
+  if [ -n "${OKFW_CACHE_DIR-}" ]; then
+    okfw_cache=$OKFW_CACHE_DIR
+  elif [ -n "${XDG_CACHE_HOME-}" ]; then
+    okfw_cache=$XDG_CACHE_HOME
+  elif [ -n "${HOME-}" ]; then
+    okfw_cache=$HOME/.cache
+  else
+    okfw_fail 3 'no cache directory: set OKFW_CACHE_DIR, XDG_CACHE_HOME or HOME'
+  fi
+  okfw_cache=$okfw_cache/okf-cli/$okfw_version
+  okfw_name=okf-cli-$okfw_version-all.jar
+  okfw_jar=$okfw_cache/$okfw_name
+  if [ -f "$okfw_jar" ]; then
+    # A cached jar that does not match the pin is replaced by a fresh download.
+    okfw_have=$(okfw_hash_file "$okfw_jar") || exit 3
+    if [ "$okfw_have" != "$okfw_sha256" ]; then
+      rm -f "$okfw_jar" || okfw_fail 3 "cannot replace the cached jar $okfw_jar"
+      okfw_download
+    fi
+  else
+    okfw_download
+  fi
+
+  trap - EXIT HUP INT TERM
+  if [ -n "$okfw_lc_all_set" ]; then
+    LC_ALL=$okfw_lc_all
+  else
+    unset LC_ALL
+  fi
+  exec "$okfw_java" -jar "$okfw_jar" "$@"
+}
+
+# Prints "okfw: <message>" on stderr and exits with code $1.
+okfw_fail() {
+  okfw_code=$1
+  shift
+  printf 'okfw: %s\n' "$*" >&2
+  exit "$okfw_code"
+}
+
+# Called by the EXIT trap: removes a download that did not reach the cache.
+# shellcheck disable=SC2317,SC2329
+okfw_cleanup() {
+  if [ -n "$okfw_tmp" ]; then
+    rm -f "$okfw_tmp"
+  fi
+}
+
+# Whether $1 may be echoed in a message: printable ASCII, at most 64 characters (a pin is untrusted input). A failing
+# grep counts as "not printable".
+okfw_printable() {
+  [ "${#1}" -le 64 ] && printf '%s\n' "$1" | LC_ALL=C grep -q '^[ -~]*$'
+}
+
+# Reads the pin file $1 into okfw_version and okfw_sha256 (lowercase), or exits 2.
+okfw_read_pin() {
+  okfw_version=
+  okfw_sha256=
+  okfw_version_line=
+  okfw_sha256_line=
+  okfw_bom=$(printf '\357\273\277')
+  okfw_cr=$(printf '\r')
+  okfw_tab=$(printf '\t')
+  # `read` drops NUL bytes, which would hide them inside a key or value: such a file is rejected as a whole.
+  okfw_size=$(wc -c < "$1") || exit 2
+  okfw_text_size=$(LC_ALL=C tr -d '\000' < "$1" | wc -c) || exit 2
+  if [ "$((okfw_size))" -ne "$((okfw_text_size))" ]; then
+    okfw_fail 2 "$1: is not a text file (it contains a NUL byte)"
+  fi
+  okfw_n=0
+  while IFS= read -r okfw_line || [ -n "$okfw_line" ]; do
+    okfw_n=$((okfw_n + 1))
+    if [ "$okfw_n" -eq 1 ]; then
+      okfw_line=${okfw_line#"$okfw_bom"}
+    fi
+    # Trailing blanks and the CR of a CRLF line end are ignored.
+    while :; do
+      case $okfw_line in
+        *" " | *"$okfw_tab" | *"$okfw_cr") okfw_line=${okfw_line%?} ;;
+        *) break ;;
+      esac
+    done
+    case $okfw_line in
+      '' | '#'*) continue ;;
+      *=*) ;;
+      *) okfw_fail 2 "$1: line $okfw_n is not key=value" ;;
+    esac
+    okfw_key=${okfw_line%%=*}
+    okfw_value=${okfw_line#*=}
+    case $okfw_key in
+      '' | *" "* | *"$okfw_tab"*) okfw_fail 2 "$1: line $okfw_n is not key=value" ;;
+    esac
+    case $okfw_value in
+      " "* | "$okfw_tab"*) okfw_fail 2 "$1: line $okfw_n is not key=value" ;;
+    esac
+    case $okfw_key in
+      version)
+        [ -z "$okfw_version_line" ] || okfw_fail 2 "$1: 'version' is given more than once"
+        okfw_version_line=$okfw_n
+        okfw_version=$okfw_value
+        ;;
+      sha256)
+        [ -z "$okfw_sha256_line" ] || okfw_fail 2 "$1: 'sha256' is given more than once"
+        okfw_sha256_line=$okfw_n
+        okfw_sha256=$okfw_value
+        ;;
+      *)
+        if okfw_printable "$okfw_key"; then
+          okfw_fail 2 "$1: unknown key '$okfw_key'"
+        fi
+        okfw_fail 2 "$1: line $okfw_n: unknown key"
+        ;;
+    esac
+  done < "$1"
+  [ -n "$okfw_version_line" ] || okfw_fail 2 "$1: 'version' is missing"
+  [ -n "$okfw_sha256_line" ] || okfw_fail 2 "$1: 'sha256' is missing"
+  # SemVer 2.0 without build metadata, as release.yml accepts it.
+  if ! printf '%s\n' "$okfw_version" \
+    | LC_ALL=C grep -Eq '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(\.(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?$'; then
+    if okfw_printable "$okfw_version"; then
+      okfw_fail 2 "$1: version '$okfw_version' is not a version such as 1.2.3 or 1.2.3-rc.1"
+    fi
+    okfw_fail 2 "$1: line $okfw_version_line: version is not a version such as 1.2.3 or 1.2.3-rc.1"
+  fi
+  printf '%s\n' "$okfw_sha256" | LC_ALL=C grep -Eq '^[0-9A-Fa-f]{64}$' \
+    || okfw_fail 2 "$1: sha256 must be 64 hexadecimal digits"
+  okfw_sha256=$(printf '%s' "$okfw_sha256" | tr ABCDEF abcdef)
+}
+
+# Prints the lowercase SHA-256 of the file $1.
+okfw_hash_file() {
+  if [ "$okfw_sha_tool" = sha256sum ]; then
+    okfw_hash=$(sha256sum < "$1") || exit 3
+  else
+    okfw_hash=$(shasum -a 256 < "$1") || exit 3
+  fi
+  printf '%s' "${okfw_hash%% *}" | tr ABCDEF abcdef
+}
+
+# Sets okfw_java to $JAVA_HOME/bin/java or the java on the PATH; exits 3 when there is none or it is older than 17.
+okfw_find_java() {
+  if [ -n "${JAVA_HOME-}" ] && [ -x "$JAVA_HOME/bin/java" ]; then
+    okfw_java=$JAVA_HOME/bin/java
+  elif okfw_java=$(command -v java); then
+    :
+  else
+    okfw_fail 3 "Java not found $okfw_dash okf-cli needs Java 17 or later (set JAVA_HOME or put java on the PATH)"
+  fi
+  # `java -version` names the version in quotes ("1.8.0_412", "17.0.2", "25"); a string it cannot read proceeds, a
+  # probe that fails (such as a java stub without a JDK behind it) does not.
+  if okfw_probe=$("$okfw_java" -version 2>&1); then
+    :
+  else
+    okfw_status=$?
+    okfw_fail 3 "Java not usable: $okfw_java -version exited $okfw_status $okfw_dash okf-cli needs Java 17 or later (set JAVA_HOME or put java on the PATH)"
+  fi
+  okfw_java_version=$(printf '%s\n' "$okfw_probe" | LC_ALL=C sed -n 's/.*version "\([^"]*\)".*/\1/p' | head -n 1)
+  case $okfw_java_version in
+    1.*) okfw_java_version=${okfw_java_version#1.} ;;
+  esac
+  okfw_java_major=${okfw_java_version%%[!0-9]*}
+  if [ -n "$okfw_java_major" ] && [ "${#okfw_java_major}" -le 9 ] && [ "$okfw_java_major" -lt 17 ]; then
+    okfw_fail 3 "Java 17 or later is required; $okfw_java is version $okfw_java_major"
+  fi
+}
+
+# Downloads the pinned release jar to a temporary file next to its cache path, checks its SHA-256, then moves it there.
+okfw_download() {
+  command -v curl > /dev/null 2>&1 || okfw_fail 3 'curl not found'
+  (umask 077 && mkdir -p "$okfw_cache") || exit 3
+  # A directory at the jar's path would swallow the download (mv moves into it).
+  if [ -e "$okfw_jar" ] && [ ! -f "$okfw_jar" ]; then
+    okfw_fail 3 "cannot use the cache: $okfw_jar is not a file"
+  fi
+  okfw_url=https://github.com/sharpbitstudio/okf-cli/releases/download/v$okfw_version/$okfw_name
+  okfw_tmp=$(mktemp "$okfw_cache/.$okfw_name.XXXXXX") || exit 3
+  printf 'okfw: downloading okf-cli %s\n' "$okfw_version" >&2
+  curl -q --fail --silent --show-error --location --proto =https --proto-redir =https --tlsv1.2 --retry 3 \
+    -o "$okfw_tmp" "$okfw_url" || okfw_fail 3 "download failed: $okfw_url"
+  okfw_got=$(okfw_hash_file "$okfw_tmp") || exit 3
+  if [ "$okfw_got" != "$okfw_sha256" ]; then
+    okfw_fail 3 "SHA-256 mismatch for $okfw_name: the pin says $okfw_sha256, the download has $okfw_got"
+  fi
+  if ! mv -f "$okfw_tmp" "$okfw_jar"; then
+    # Windows refuses to replace a jar that a running JVM holds open, such as one a parallel first run just placed
+    # there: that one is used when it matches the pin.
+    okfw_have=$(okfw_hash_file "$okfw_jar") || exit 3
+    [ "$okfw_have" = "$okfw_sha256" ] || exit 3
+    rm -f "$okfw_tmp"
+  fi
+  okfw_tmp=
+}
+
+main "$@"; exit

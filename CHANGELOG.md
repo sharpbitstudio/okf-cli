@@ -53,14 +53,26 @@ committed indexes are stale. Run the index command once, or set `index_language:
   class whose range spans `/` (`[+-0]`) could match `/` (a class never matches `/`, as the finding for a `/` inside
   a class already says).
 - New command `okf init`: writes `okf.yaml` (with `repo`, `index_language: en`, `index_command` and, when not
-  `docs`, `docs_root`) and the bundle-root `<docs_root>/index.md` for a new bundle. `--index-command=<command>` is
-  required; `--name=<repo>` (default: the name of the `--repo` directory) and `--docs-root=<dir>` (default `docs`)
-  are optional, and `--adopt` uses a docs root that already holds documents as the bundle. It never overwrites an
+  `docs`, `docs_root`) and the bundle-root `<docs_root>/index.md` for a new bundle, and by default the launcher
+  (below). `--index-command=<command>` defaults to `./okfw index` (required with `--launcher=false`);
+  `--name=<repo>` (default: the name of the `--repo` directory) and `--docs-root=<dir>` (default `docs`) are
+  optional, and `--adopt` uses a docs root that already holds documents as the bundle. It never overwrites an
   existing file and writes all or nothing: exit `0` when the files were created, `1` for conflicts (all reported,
   nothing written) or a failed write (what the run created is removed), `2` for a usage error, a `--repo` that is
   not the work-tree root, or an invalid `--name`, `--docs-root` or `--index-command`. In a repository without
   documentation the bundle it creates passes `okf check --strict --refs-strict --code-paths-required` right away
-  (`docs/reference.md`, "Starting a bundle"). The unknown-command message lists `init` last.
+  (`docs/reference.md`, "Starting a bundle").
+- New launcher `okfw` (a POSIX `sh` script, with `okfw.cmd` for `cmd` and PowerShell through Git for Windows'
+  `sh.exe`) and pin file `okf-wrapper.properties` (`version`, `sha256`) at the repository root: `./okfw <command>`
+  downloads the pinned release jar once into a per-user cache, checks its SHA-256 against the pin before every run
+  and runs it with Java 17 or later; exit `2` for a pin error, `3` when no verified jar or Java is available, the
+  jar's code otherwise; variables `OKFW_PIN` and `OKFW_CACHE_DIR`. `--update` and `--verify` as the first argument
+  are reserved (exit `2` in this launcher revision). See `docs/launcher.md`.
+- New command `okf wrapper`: writes the launcher files, refreshes ones that carry the launcher marker, writes the pin
+  with its own SHA-256 when there is none and it runs from a release `all` jar, and creates `.gitattributes` when
+  absent; exit `1` when a file without the marker is in the way (nothing written). `okf init` writes the same files
+  create-only; `--launcher=false` skips them. The unknown-command message lists `init` and `wrapper` last, and
+  init's `okf.yaml already exists` conflict now points to `okf wrapper`.
 
 ## 1.0.0-alpha.1 — 2026-11-12
 
