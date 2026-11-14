@@ -68,9 +68,10 @@ class OkfCliMessagesTest {
                 "  xcheck    check the hub and its satellites together (run in the hub): cross-repo code references,\n" +
                 "            hub:/repos: links, drift of hub records, satellite index URLs\n" +
                 "  version   print the tool version\n" +
+                "  init      write okf.yaml and the bundle-root index.md for a new bundle; never overwrites\n" +
                 "\n" +
                 "Options (boolean flags: bare = true, or =true|false):\n" +
-                "  --repo=<dir>                git work-tree root holding okf.yaml                           [index, check, impact, xcheck]\n" +
+                "  --repo=<dir>                git work-tree root holding okf.yaml (init writes it there)    [index, check, impact, xcheck, init]\n" +
                 "                              (default: working directory)\n" +
                 "  --strict                    files without frontmatter are failures                        [check]\n" +
                 "  --refs-strict               broken code references are failures                           [check]\n" +
@@ -83,6 +84,11 @@ class OkfCliMessagesTest {
                 "  --workspace=<dir>           directory holding every satellite checkout as <dir>/<repo>    [xcheck, required]\n" +
                 "  --report=<file>             Markdown report, written when there are findings and deleted  [xcheck]\n" +
                 "                              after a clean run\n" +
+                "  --name=<repo>               repository name (default: the name of the --repo directory)   [init]\n" +
+                "  --docs-root=<dir>           repo-relative directory of the bundle (default: docs)         [init]\n" +
+                "  --index-command=<command>   the one-line command that regenerates the indexes             [init, required]\n" +
+                "  --adopt                     use a docs root that already holds documents as the bundle    [init]\n" +
+                "                              (no existing file is changed)\n" +
                 "\n" +
                 "Exit codes: 0 OK, 1 findings (or the command could not complete), 2 usage or okf.yaml error\n" +
                 "(xcheck: 0 also with drift warnings only; 2 also for a missing or misconfigured satellite checkout).",
@@ -111,7 +117,7 @@ class OkfCliMessagesTest {
             { assertEquals("okf: unexpected argument 'extra'", usageError("check", "extra"), "CliArgs#1") },
             {
                 assertEquals(
-                    "okf: unknown command 'bogus' (expected one of index, check, impact, xcheck, version)",
+                    "okf: unknown command 'bogus' (expected one of index, check, impact, xcheck, version, init)",
                     usageError("bogus"),
                     "CliArgs#2",
                 )

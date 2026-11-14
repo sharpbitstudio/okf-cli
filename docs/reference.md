@@ -18,7 +18,9 @@ repo's bundle (`docs_root` in `okf.yaml`, default `docs`):
   ref and that were neither updated nor acknowledged by a `Docs-Impact:` commit trailer.
 
 A fourth command, `okf xcheck`, runs in the hub and checks the hub and its satellites together
-([Cross-repo check](#cross-repo-check-xcheck)). `okf version` prints `okf-cli <version>`.
+([Cross-repo check](#cross-repo-check-xcheck)). `okf version` prints `okf-cli <version>`. `okf init` starts a
+bundle: it writes `okf.yaml` and the bundle-root `<docs_root>/index.md`
+([Starting a bundle](#starting-a-bundle-okf-init)).
 
 Documentation can be spread over several repos (a federation): one **hub** repo holds the Feature Records, and
 **satellite** repos hold `Satellite Note`s that belong to a feature recorded in the hub. A single repo needs none
@@ -27,9 +29,9 @@ of this: it uses `index`, `check` and `impact` and leaves `hub_repo` and `satell
 ## CLI
 
 ```
-okf <index|check|impact|xcheck|version> [options]      (--help / -h anywhere: print the usage)
+okf <index|check|impact|xcheck|version|init> [options] (--help / -h anywhere: print the usage)
 
-  --repo=<dir>             git work-tree root holding okf.yaml                          [index, check, impact, xcheck]
+  --repo=<dir>             git work-tree root holding okf.yaml (init writes it there)   [index, check, impact, xcheck, init]
                            (default: working directory)
   --strict                 files without frontmatter are failures                       [check]
   --refs-strict            broken code references are failures                          [check]
@@ -42,6 +44,12 @@ okf <index|check|impact|xcheck|version> [options]      (--help / -h anywhere: pr
   --workspace=<dir>        directory holding every satellite checkout as <dir>/<repo>    [xcheck, required]
   --report=<file>          Markdown report, written when there are findings and deleted  [xcheck]
                            after a clean run
+  --name=<repo>            repository name (default: the name of the --repo directory)   [init]
+  --docs-root=<dir>        repo-relative directory of the bundle (default: docs)         [init]
+  --index-command=<command>
+                           the one-line command that regenerates the indexes             [init, required]
+  --adopt                  use a docs root that already holds documents as the bundle    [init]
+                           (no existing file is changed)
 ```
 
 Boolean flags are `--flag` (true) or `--flag=true|false`; any other value is a usage error. Value
@@ -52,6 +60,9 @@ root (`git rev-parse --show-toplevel`), not a directory below it.
 Exit codes: `0` OK, `1` findings that fail under the given strictness (or the command could not
 complete, e.g. broken frontmatter for `index`, git not runnable), `2` usage, `--repo` or `okf.yaml` error.
 For `xcheck`, `0` also covers drift warnings only, and `2` also a missing or misconfigured satellite checkout.
+For `init`, `1` means a conflict, a Markdown file in the docs root that cannot be read, or a failed write (nothing
+is left written), and `2` also an invalid `--name`, `--docs-root` (including the control-character and
+trailing-dot/blank rule) or `--index-command`.
 Info lines and annotations go to stdout, warnings and failures to stderr. Under GitHub Actions
 (`GITHUB_ACTIONS=true`) the code-reference findings of `check` and the findings of `impact` are also printed as
 `::warning` / `::error` workflow commands, so they show up as annotations on the offending doc line.
@@ -128,6 +139,79 @@ is broken:
   - `okf xcheck OK: <counts>.`
   - `okf xcheck OK: <counts>; M warning(s).`
   - `okf xcheck: <counts>; N problem(s), M warning(s).`
+
+`okf init` ([Starting a bundle](#starting-a-bundle-okf-init)), where `<docs_root>` is the docs root as given:
+
+- `okf init: <message>` on stderr (exit `2`) for a missing `--index-command`, an invalid `--name`, a `--docs-root`
+  with a control character or a segment ending in `.` or a blank, a `--docs-root` that collides with `okf.yaml` or
+  `.git`, and a value that `okf.yaml` rejects (`okf init: okf.yaml: …`) or that would not read back as given:
+  - `okf init: --index-command=<command> is required: the one-line command that regenerates the indexes in this repository`
+  - `okf init: --name '<value>' must be a repository name (letters, digits, '.', '_' or '-')`
+  - `okf init: the directory name '<value>' cannot be the repository name (letters, digits, '.', '_' or '-') — pass --name=<repo>`
+  - `okf init: --docs-root '<value>' must not contain control characters or a segment ending in '.' or a blank`
+  - `okf init: --docs-root '<value>' collides with <path>` (`<path>` is `okf.yaml` or `.git`)
+  - `okf init: --<option> '<value>' cannot be written to okf.yaml as given` (`<option>` is `docs-root` or
+    `index-command`)
+- on a conflict, one block on stderr (exit `1`): `okf init found N problem(s); nothing was written:`, then one line
+  `  - <problem>` per problem, in this order:
+  - `okf.yaml already exists — this repository is already set up`
+  - `<path> exists and is not a directory` (the docs root or one of its parent directories)
+  - `<docs_root>/ already holds M Markdown file(s) (A without frontmatter, B with frontmatter, C with invalid frontmatter, D non-root index.md with frontmatter) — pass --adopt to use it as the bundle (no existing file is changed), or --docs-root=<dir> for a separate bundle`
+    (without `--adopt`)
+  - `<docs_root>/<sub>/ already exists — pass --adopt to use <docs_root>/ as the bundle, or --docs-root=<dir> for a separate bundle`
+    (without `--adopt`; `<sub>` is `adr`, then `features`, one line each; `<dir>` is printed as is)
+  - `<docs_root>/index.md exists but is not a bundle root: <problem>` (with `--adopt`; the first problem `okf check`
+    would report for it)
+- `okf init: cannot read <path>: <reason>` on stderr (exit `1`, nothing written) when a Markdown file in the docs
+  root cannot be read, and `okf init: cannot write <path>: <reason>; the files created by this run were removed`
+  (exit `1`) when a write fails midway; in both, `<reason>` comes from the operating system or the Java runtime;
+- otherwise, on stdout:
+  - `[created] <path>` or `[kept] <path>` per file, repo-relative, in write order (`okf.yaml` first);
+  - `OKF INFO: <docs_root>/ holds M Markdown file(s) that were not changed; okf check --strict lists what to migrate.`
+    (with `--adopt`, when the docs root holds Markdown files besides a kept `index.md`);
+  - `OKF INFO: <docs_root>/<sub>/index.md is generated: <index_command> creates or replaces it.` (with `--adopt`,
+    `<sub>` is `adr`, then `features`, one line each for an existing directory; control characters and line
+    separators in `<index_command>` are shown as `\uNNNN`);
+  - `okf init OK: N file(s) created.`
+
+## Starting a bundle (`okf init`)
+
+```bash
+java -jar okf-cli-<version>-all.jar init --repo=. --index-command="java -jar tools/okf.jar index"
+```
+
+`okf init` writes the two files a bundle needs: `okf.yaml` at the work-tree root and the bundle-root
+`<docs_root>/index.md` (frontmatter `okf_version: "0.2"`, a title and one sentence). It creates the docs root and
+its parent directories as needed and adds nothing else (no `adr/` or `features/`). `--repo` must be the git
+work-tree root, as for the other commands; `okf.yaml` is not read.
+
+- `--index-command=<command>` is required: the one-line command that regenerates the indexes in this repository,
+  written as `index_command` (it is rendered into the generated indexes and every "run …" hint).
+- `--name=<repo>` is written as `repo`; by default the name of the `--repo` directory. A repository name holds
+  letters, digits, `.`, `_` or `-` and is not `.` or `..`.
+- `--docs-root=<dir>` is written as `docs_root` when it is not `docs` (the default); it follows the `docs_root`
+  rules, holds no control characters or line separators, has no segment ending in `.` or a blank (Windows would
+  drop them), and must not be `okf.yaml`, `.git` or a path below either (compared ignoring case).
+- The values are checked by parsing the `okf.yaml` about to be written, with the rules of
+  [`okf.yaml`](#okfyaml-schema-v1); a value YAML would read as something else (`123`, `1e3`, `0x1F`, `true`,
+  `2026-01-01`, a leading `*` or `&`, ` #`) is written double-quoted, and a value that would not read back exactly
+  as given (leading or trailing blanks) is an error. `index_language: en` is written too, so the generated indexes
+  do not depend on a default.
+
+It never changes an existing file, and it is all or nothing: every conflict is reported in one block before
+anything is written (exit `1`), and when a write fails midway the files and directories this run created are
+removed again. Conflicts are an existing `okf.yaml` (the repository is already set up), a docs root or parent
+directory that is a file, and, without `--adopt`, a docs root that already holds documentation.
+
+A **repository without documentation** is one whose docs root is absent, or exists holding no `.md` file and no
+`adr/` or `features/` directory. There `okf init` needs no `--adopt`, and the bundle it creates passes
+`okf check --strict --refs-strict --code-paths-required` of the same version right away, before a commit.
+
+`--adopt` uses a docs root that already holds documentation as the bundle. No existing file is changed: a valid
+bundle-root `index.md` is kept (`[kept]`), and one that `okf check` would reject is a conflict. The documents
+found are named in an info line (`okf check --strict` lists the ones without frontmatter), and an existing `adr/`
+or `features/` gets one too, because `okf check` then requires its generated `index.md`, which the index command
+creates or replaces. The strict check passing right after `init` is not promised for an adopted docs root.
 
 ## `okf.yaml` (schema v1)
 
@@ -344,6 +428,10 @@ With these task names, `index_command: ./gradlew okfIndex` names the task that r
     `adr_status` values, the commands): a minor version may add an entry, and the message then names it. The
     built-in document types do not change within a major version;
   - the usage text printed by `--help` and after a usage error.
+- `okf init`: its options, exit codes and console lines, which files it creates for a given command line and
+  repository state, and that it never changes an existing file are covered; a bundle it creates in a repository
+  without documentation passes `okf check --strict --refs-strict --code-paths-required` of the same version. The
+  text of the files it writes is not covered: a later version may write better ones.
 - Input that a version rejects may be valid in a later minor version: a new optional key or a new allowed value
   turns the former `okf.yaml` error (exit `2`) or finding into accepted input. The other direction is covered by
   the first rule: input that is valid stays valid, with the same output.

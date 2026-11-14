@@ -9,13 +9,14 @@ enum class Command(val cliName: String, val options: Set<String>) {
     IMPACT("impact", setOf(CliArgs.REPO, CliArgs.BASE, CliArgs.IMPACT_STRICT)),
     XCHECK("xcheck", setOf(CliArgs.REPO, CliArgs.WORKSPACE, CliArgs.REPORT)),
     VERSION("version", emptySet()),
+    INIT("init", setOf(CliArgs.REPO, CliArgs.NAME, CliArgs.DOCS_ROOT, CliArgs.INDEX_COMMAND, CliArgs.ADOPT)),
 }
 
 /** Bad command line; the CLI prints the message and the usage and exits with [OkfCli.EXIT_USAGE]. */
 class UsageException(message: String) : RuntimeException(message)
 
 /**
- * A parsed command line: `okf <index|check|impact|xcheck|version> [options]`. Boolean flags are `--flag`
+ * A parsed command line: `okf <index|check|impact|xcheck|version|init> [options]`. Boolean flags are `--flag`
  * (= true) or `--flag=true|false` (strictly — a typo such as `--strict=ture` is a usage error).
  * Value options take `--opt=<value>` or `--opt <value>`
  * (the space form never takes a value starting with `--`; an empty value needs the `=` form or an empty argument).
@@ -34,6 +35,14 @@ data class CliArgs(
     val workspace: File? = null,
     /** `--report` (`xcheck`): where the Markdown report goes when there are findings; `null` = no report. */
     val report: File? = null,
+    /** `--name` (`init`): the repository name to write as `repo`; `null` = the work-tree root's directory name. */
+    val name: String? = null,
+    /** `--docs-root` (`init`): the repo-relative bundle directory as given; `null` = the default `docs`. */
+    val docsRoot: String? = null,
+    /** `--index-command` (`init`): the command written as `index_command`, as given. */
+    val indexCommand: String? = null,
+    /** `--adopt` (`init`): an existing docs root holding documents becomes the bundle. */
+    val adopt: Boolean = false,
 ) {
     companion object {
         const val REPO = "--repo"
@@ -44,9 +53,13 @@ data class CliArgs(
         const val IMPACT_STRICT = "--impact-strict"
         const val WORKSPACE = "--workspace"
         const val REPORT = "--report"
+        const val NAME = "--name"
+        const val DOCS_ROOT = "--docs-root"
+        const val INDEX_COMMAND = "--index-command"
+        const val ADOPT = "--adopt"
 
-        private val VALUE_OPTIONS = setOf(REPO, BASE, WORKSPACE, REPORT)
-        private val FLAGS = setOf(STRICT, REFS_STRICT, CODE_PATHS_REQUIRED, IMPACT_STRICT)
+        private val VALUE_OPTIONS = setOf(REPO, BASE, WORKSPACE, REPORT, NAME, DOCS_ROOT, INDEX_COMMAND)
+        private val FLAGS = setOf(STRICT, REFS_STRICT, CODE_PATHS_REQUIRED, IMPACT_STRICT, ADOPT)
 
         /** Parses [args]; a relative `--repo`, `--workspace` or `--report` resolves against [cwd]. Throws [UsageException]. */
         fun parse(args: List<String>, cwd: File): CliArgs {
@@ -98,6 +111,10 @@ data class CliArgs(
                 base = values[BASE],
                 workspace = workspace,
                 report = file(REPORT),
+                name = values[NAME],
+                docsRoot = values[DOCS_ROOT],
+                indexCommand = values[INDEX_COMMAND],
+                adopt = flag(ADOPT),
             )
         }
     }

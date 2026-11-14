@@ -2,7 +2,8 @@
 
 `okf-cli` builds `okf`, a Kotlin CLI that keeps an OKF (Open Knowledge Format) v0.2 docs bundle consistent with
 the code: `okf index|check|impact` work on one repo's bundle, `okf xcheck` checks a hub repo and its satellites
-together, `okf version` prints `okf-cli <version>`. Documentation lives in the repo's own OKF bundle:
+together, `okf init` writes `okf.yaml` and the bundle root for a new bundle, `okf version` prints
+`okf-cli <version>`. Documentation lives in the repo's own OKF bundle:
 `docs/index.md`; CLI, `okf.yaml` schema, bundle rules and the compatibility contract in `docs/reference.md`;
 build, CI, release and third-party licences in `docs/build-release.md`. `README.md` is only the landing page;
 `CHANGELOG.md` records every change per version.

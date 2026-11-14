@@ -52,6 +52,15 @@ committed indexes are stale. Run the index command once, or set `index_language:
   range (it is a literal `-` now, as in POSIX globs, so `[!--]` is no longer rejected and `[!-a-0]` is), and a
   class whose range spans `/` (`[+-0]`) could match `/` (a class never matches `/`, as the finding for a `/` inside
   a class already says).
+- New command `okf init`: writes `okf.yaml` (with `repo`, `index_language: en`, `index_command` and, when not
+  `docs`, `docs_root`) and the bundle-root `<docs_root>/index.md` for a new bundle. `--index-command=<command>` is
+  required; `--name=<repo>` (default: the name of the `--repo` directory) and `--docs-root=<dir>` (default `docs`)
+  are optional, and `--adopt` uses a docs root that already holds documents as the bundle. It never overwrites an
+  existing file and writes all or nothing: exit `0` when the files were created, `1` for conflicts (all reported,
+  nothing written) or a failed write (what the run created is removed), `2` for a usage error, a `--repo` that is
+  not the work-tree root, or an invalid `--name`, `--docs-root` or `--index-command`. In a repository without
+  documentation the bundle it creates passes `okf check --strict --refs-strict --code-paths-required` right away
+  (`docs/reference.md`, "Starting a bundle"). The unknown-command message lists `init` last.
 
 ## 1.0.0-alpha.1 — 2026-11-12
 
