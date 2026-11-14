@@ -80,6 +80,13 @@ committed indexes are stale. Run the index command once, or set `index_language:
   absent; exit `1` when a file without the marker is in the way (nothing written). `okf init` writes the same files
   create-only; `--launcher=false` skips them. The unknown-command message lists `init` and `wrapper` last, and
   init's `okf.yaml already exists` conflict now points to `okf wrapper`.
+- GitHub Action at the repository root (`uses: sharpbitstudio/okf-cli@<commit-sha>`, `action.yml`): runs
+  `okf check --strict --refs-strict --code-paths-required` and `okf impact` with the version the repository pins,
+  through the launcher, with the jar cached in the runner's temporary directory. Inputs `repo`, `strict`,
+  `refs-strict`, `code-paths-required`, `impact`, `base` and `impact-strict` (`auto`: chosen from the event, with
+  Dependabot recognised by pull request author or actor), `verify-provenance` (`okfw --verify` first); output
+  `version`. Exit `2` with an `okf-cli` error annotation for an invalid input or a shallow clone with impact on. It
+  uses no other action and needs Java 17 or later on the runner. See `docs/github-actions.md`.
 
 ## 1.0.0-alpha.1 — 2026-11-12
 

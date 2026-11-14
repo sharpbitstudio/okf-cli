@@ -515,7 +515,7 @@ With these task names, `index_command: ./gradlew okfIndex` names the task that r
   same repository, `okf wrapper` of a later version may therefore report `[updated]` where an earlier one reported
   `[unchanged]`. The wording and format of its lines stay covered.
 - The pin file: its name, its place at the repository root, the keys `version` and `sha256` and its grammar do not
-  change within a major version; a launcher of the same major version reads every pin written by one.
+  change within a major version; a launcher or the Action of the same major version reads every pin written by one.
 - The launcher ([launcher.md](launcher.md)): its command line (`okfw <okf arguments>`, `okfw --update <version>`,
   `okfw --verify`), the variables `OKFW_PIN` and `OKFW_CACHE_DIR`, its exit codes (`2` and `3` for its own errors, the
   tool's code otherwise) and its own `okfw: …` messages are covered; so is that it prints nothing on standard output
@@ -523,6 +523,8 @@ With these task names, `index_command: ./gradlew okfIndex` names the task that r
   before every run. Output of `curl`, `gh`, `sh.exe` and Java, and the cache layout, are not.
 - The minimum `gh` version and the provenance policy of `okfw --update` and `okfw --verify` may be tightened in any
   release; each change is listed in `CHANGELOG.md`.
+- The GitHub Action ([github-actions.md](github-actions.md)): input and output names, defaults and the base/strictness
+  table are covered for a given commit; it is referenced by commit, and a later commit may add inputs.
 - Input that a version rejects may be valid in a later minor version: a new optional key or a new allowed value
   turns the former `okf.yaml` error (exit `2`) or finding into accepted input. The other direction is covered by
   the first rule: input that is valid stays valid, with the same output.

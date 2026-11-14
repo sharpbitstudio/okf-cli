@@ -59,7 +59,9 @@ ADR index links `adr/README.md` only when that file exists (`adr_readme_link`). 
 knows `okf.yaml` keys that `1.0.0-alpha.1` rejects as unknown: `base_ref`, `extra_types`, `drift_days`,
 `adr_readme_link`. `main` also has the new command `okf init` (it writes `okf.yaml` and the bundle root for a new
 bundle) and the launcher `okfw` with its pin file, written by `okf init` and `okf wrapper`
-([docs/launcher.md](docs/launcher.md)), which no release has yet.
+([docs/launcher.md](docs/launcher.md)), which no release has yet. `main` also has a GitHub Action that runs
+`okf check` and `okf impact` with the pinned version ([docs/github-actions.md](docs/github-actions.md)); it is not
+part of a release yet.
 
 ## Quick start
 

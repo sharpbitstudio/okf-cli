@@ -40,9 +40,12 @@ runs on JDK 25.
 
 `test` runs every test except those tagged `network`. It depends on the `all` jar and passes the tests two system
 properties: `okf.allJar` (the jar, which the launcher tests run through `okfw` with a real Java) and `okf.repoRoot`
-(this checkout, whose `launcher/` the tests compare with the embedded copy). The launcher tests run `okfw` with a real
-`sh` (`/bin/sh`; on Windows Git for Windows' `sh.exe`) against `curl` and `java` stubs, with a `PATH` that holds only
-those stubs and the tools the script may use (`curl`, `gh` and `java` stubs for `--update` and `--verify`).
+(this checkout, whose `launcher/` the tests compare with the embedded copy, and whose `action/` and `action.yml` the
+GitHub Action's tests run). The launcher tests run `okfw` with a real `sh` (`/bin/sh`; on Windows Git for Windows'
+`sh.exe`) against `curl` and `java` stubs, with a `PATH` that holds only those stubs and the tools the script may use
+(`curl`, `gh` and `java` stubs for `--update` and `--verify`). The Action's tests run its scripts with the same `sh`:
+the selection table with an empty `PATH`, and `action/check.sh` against a stub launcher, with only `sh`, `grep`, `tr`
+and `git` on the `PATH`.
 `networkTest` runs only the `network` tests: `okfw` downloads the published `1.0.0-alpha.1` with real `curl` and runs
 it, and `okfw --verify` / `okfw --update` check its build provenance with the real `gh`. Those `gh` cases are skipped
 where `gh` is missing or older than 2.102.0, except on GitHub Actions, where that fails them. `networkTest` is not
@@ -91,7 +94,22 @@ this repo and its own concurrency group. Its jobs are not required checks:
   published release run on each system. The log shows `java -version` and `gh --version` of the runner.
 - **`Launcher (release-like version)`** on `ubuntu-latest`: `./gradlew build -Pversion=0.0.0-e2e.1`, so the tests
   whose result depends on whether the jar is a release (it then writes the pin itself) run as in a release build,
-  and `shellcheck -s sh` on `launcher/okfw`.
+  and `shellcheck -s sh` on `launcher/okfw` and the GitHub Action's scripts `action/*.sh`.
+- **`Action (<os>)`** on `ubuntu-latest`, `macos-latest` and `windows-latest`: the GitHub Action of the commit
+  (`uses: ./`, [github-actions.md](github-actions.md)) against fixture repositories. The job first checks that the
+  image's own Java (before `actions/setup-java`, found as the launcher finds it) is 17 or later. It builds the
+  `all` jar as `0.0.0-e2e.1`, whose `okf init` writes a fixture bundle with a pin naming that jar, and seeds the
+  action's cache with it. With explicit `base` and `impact-strict` inputs, so the result does not depend on the
+  event, the action passes on the clean bundle (and its `version` output names the pinned version), fails on a
+  branch that changes code under a document's `code_paths` without updating it, and passes on that branch with
+  `impact-strict: 'false'`, so the failure is the impact finding's. It also passes on the clean bundle with `base`
+  and `impact-strict` at `auto` for whatever event started the run: on a push to `main` the selected base is this
+  repository's previous `main` commit, which the fixture does not have, so the run exercises the CLI's
+  unreachable-base path (a non-strict skip with a warning annotation); on other events it exercises the real
+  selection (for a fork pull request the job pushes the fixture's `main` as the pull request's base branch, so
+  `origin/<base branch>` exists). The job also checks that the event names the default branch. A third fixture,
+  with an `origin/main`, pins the published `1.0.0-alpha.1`, which the action downloads from the release, and runs
+  `check` and `impact` with it.
 
 ## Release
 
@@ -217,6 +235,13 @@ branches run the same CI as any other branch (see [CI](#ci)), with impact findin
 - Dependabot pull requests are merged between other pull requests, never while one of those is open: merging moves
   `main`, which accepts a branch only when it is up to date, so every open branch then has to be rebased (a
   Dependabot branch by commenting `@dependabot rebase` on its pull request).
+
+The GitHub Action this repository ships (`action.yml`, [github-actions.md](github-actions.md)) uses no other action,
+so no Dependabot pull request changes what its consumers run; the actions of the `e2e` workflow are CI-only and
+follow the rules above. A change to `action.yml`, `action/**` or `launcher/**` is a product change and gets a
+`CHANGELOG.md` entry. This repository's `build.yml` recognises Dependabot by its branch name (`dependabot/**`; only
+Dependabot pushes such branches here), while the Action recognises it by the pull request's author or the actor,
+since a fork can name a branch `dependabot/…`.
 
 ## Third-party licences
 

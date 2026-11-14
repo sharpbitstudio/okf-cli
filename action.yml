@@ -1,0 +1,75 @@
+# The okf-cli GitHub Action: `okf check` and `okf impact` with the okf-cli version the checked repository pins in
+# okf-wrapper.properties, run through this commit's copy of the launcher (launcher/okfw). Docs:
+# https://github.com/sharpbitstudio/okf-cli/blob/main/docs/github-actions.md
+#
+# It uses no other action: the caller checks out (with fetch-depth: 0 for impact) and provides Java 17 or later.
+# Every input and event fact reaches the scripts through `env:`, never inside `run:`; the logic is in action/check.sh
+# and action/impact-args.sh.
+name: okf-cli
+description: Check an OKF docs bundle and its docs impact with the okf-cli version the repository pins.
+author: SharpBit Studio
+
+inputs:
+  repo:
+    description: The work-tree root to check, relative to the workspace; the pin is <repo>/okf-wrapper.properties.
+    required: false
+    default: .
+  strict:
+    description: okf check --strict (files without frontmatter are failures).
+    required: false
+    default: 'true'
+  refs-strict:
+    description: okf check --refs-strict (broken code references are failures).
+    required: false
+    default: 'true'
+  code-paths-required:
+    description: okf check --code-paths-required.
+    required: false
+    default: 'true'
+  impact:
+    description: Run okf impact after okf check.
+    required: false
+    default: 'true'
+  base:
+    description: The base of okf impact. auto (or empty or blank) chooses it from the event; any other value is passed as --base.
+    required: false
+    default: auto
+  impact-strict:
+    description: okf impact --impact-strict. auto chooses it from the event; true or false sets it.
+    required: false
+    default: auto
+  verify-provenance:
+    description: Run okfw --verify (the build provenance of the pinned release, with the GitHub CLI) before okf check.
+    required: false
+    default: 'false'
+
+outputs:
+  version:
+    description: The pinned okf-cli version.
+    value: ${{ steps.okf.outputs.version }}
+
+runs:
+  using: composite
+  steps:
+    - id: okf
+      shell: bash
+      env:
+        OKF_INPUT_REPO: ${{ inputs.repo }}
+        OKF_INPUT_STRICT: ${{ inputs.strict }}
+        OKF_INPUT_REFS_STRICT: ${{ inputs.refs-strict }}
+        OKF_INPUT_CODE_PATHS_REQUIRED: ${{ inputs.code-paths-required }}
+        OKF_INPUT_IMPACT: ${{ inputs.impact }}
+        OKF_INPUT_BASE: ${{ inputs.base }}
+        OKF_INPUT_IMPACT_STRICT: ${{ inputs.impact-strict }}
+        OKF_INPUT_VERIFY_PROVENANCE: ${{ inputs.verify-provenance }}
+        OKF_EVENT: ${{ github.event_name }}
+        OKF_REF: ${{ github.ref }}
+        OKF_DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        OKF_BEFORE: ${{ github.event.before }}
+        OKF_MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
+        OKF_PR_BASE_REF: ${{ github.base_ref }}
+        OKF_PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+        OKF_ACTOR: ${{ github.actor }}
+        OKFW_PIN: ${{ inputs.repo }}/okf-wrapper.properties
+        OKFW_CACHE_DIR: ${{ runner.temp }}/okf-cli-cache
+      run: sh "$GITHUB_ACTION_PATH/action/check.sh"
