@@ -27,7 +27,9 @@ permissions:
 # (the hermetic launcher tests run the script under each system's sh: dash, macOS /bin/sh, Git for Windows' sh.exe,
 # and okfw.cmd under cmd and PowerShell on Windows) plus `networkTest`, which downloads the published
 # 1.0.0-alpha.1 with real curl and runs okfw --verify / --update against it with the runner's gh (on GitHub Actions a
-# missing gh or one older than the launcher's floor fails those cases). These jobs are not required checks.
+# missing gh or one older than the launcher's floor fails those cases). The GitHub Action (action.yml,
+# docs/github-actions.md) runs as `uses: ./` against fixture repositories on the same three systems. These jobs are not
+# required checks.
 jobs:
   launcher:
     # A PR from a branch of this repo is covered by that branch's push run, so its pull_request job is skipped (see
@@ -109,7 +111,7 @@ jobs:
 
       - name: shellcheck
         shell: bash
-        run: shellcheck -s sh launcher/okfw
+        run: shellcheck -s sh launcher/okfw action/*.sh
 
       - name: Build + test as a release-like version
         shell: bash
@@ -125,3 +127,205 @@ jobs:
             build/test-results/
           retention-days: 7
           if-no-files-found: ignore
+
+  action:
+    # The GitHub Action of this commit (`uses: ./`) against fixture repositories: a bundle `init` wrote with this
+    # commit's jar (built as a release-like version, so the pin names it; the cache is seeded with it), clean and with
+    # an undocumented code change, and a bundle pinned to the published 1.0.0-alpha.1, which the launcher downloads.
+    # Explicit inputs keep the cases the same on every event; ImpactArgsTest covers the `auto` selection. One run here
+    # leaves base and impact-strict at `auto` on the clean bundle: on a push to main it passes this repository's
+    # `before`, which the fixture does not have, so it exercises the CLI's unreachable-base path (a non-strict skip with
+    # a warning annotation); on other events it exercises the real selection (a fork PR's base branch is pushed to the
+    # fixture's origin for it). Skipped on a same-repo PR as above.
+    name: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && 'Skipped on same-repo PR (see push run) - Action' || format('Action ({0})', matrix.os) }}
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      # Before setup-java: the Java a consumer's job finds on this image without one must be 17 or later.
+      - name: Default Java on this image is 17 or later
+        shell: bash
+        run: |
+          echo "JAVA_HOME=${JAVA_HOME-}"
+          # The launcher's order: $JAVA_HOME/bin/java when executable, else java on the PATH.
+          if [ -n "${JAVA_HOME-}" ] && [ -x "$JAVA_HOME/bin/java" ]; then
+            java=$JAVA_HOME/bin/java
+          else
+            java=java
+          fi
+          echo "java: $java"
+          line=$("$java" -version 2>&1 | head -n 1) || line="no java: $line"
+          echo "$line"
+          version=$(printf '%s\n' "$line" | sed -n 's/.*version "\([^"]*\)".*/\1/p')
+          case $version in 1.*) version=${version#1.} ;; esac
+          major=${version%%[!0-9]*}
+          echo "major version: ${major:-unknown}"
+          test -n "$major" && test "$major" -ge 17
+
+      - name: Set up JDK 25 (Temurin)
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 25
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6.4.1
+        with:
+          validate-wrappers: true
+          cache-cleanup: on-success
+
+      - name: Tools on this runner
+        shell: bash
+        run: java -version
+
+      - name: Build the all jar as a release-like version
+        shell: bash
+        run: ./gradlew allJar -Pversion=0.0.0-e2e.1 --stacktrace
+
+      - name: Fixture repositories
+        shell: bash
+        env:
+          # Empty except on a pull request.
+          PR_BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -eu
+          jar="$PWD/build/libs/okf-cli-0.0.0-e2e.1-all.jar"
+          export GIT_CONFIG_GLOBAL="$RUNNER_TEMP/fixture-gitconfig" GIT_CONFIG_NOSYSTEM=1
+          git config --global user.name e2e
+          git config --global user.email e2e@example.invalid
+          git config --global core.autocrlf false
+          git config --global commit.gpgsign false
+
+          # (a) and (b): a bundle written by this commit's `okf init`, with a bare repository as origin (origin/main).
+          fixture="$RUNNER_TEMP/fixture"
+          git init -q "$fixture"
+          git -C "$fixture" symbolic-ref HEAD refs/heads/main
+          java -jar "$jar" init "--repo=$fixture"
+          mkdir -p "$fixture/src"
+          printf 'a\n' > "$fixture/src/a.txt"
+          printf '%s\n' '---' 'type: Guide' 'title: "Guide"' 'description: "The fixture code under src/."' \
+            'tags: [e2e]' 'code_paths: ["src/**"]' '---' '# Guide' '' 'The code is under `src/`.' > "$fixture/docs/guide.md"
+          git -C "$fixture" add -A
+          git -C "$fixture" commit -q -m 'Fixture bundle'
+          git init -q --bare "$RUNNER_TEMP/fixture-origin.git"
+          git -C "$fixture" remote add origin "$RUNNER_TEMP/fixture-origin.git"
+          git -C "$fixture" push -q -u origin main
+          # On a fork PR the `auto` run below compares with origin/<the PR's base branch>: the fixture's origin gets it.
+          if [ -n "$PR_BASE_REF" ]; then
+            git -C "$fixture" push -q origin "main:refs/heads/$PR_BASE_REF"
+          fi
+          # A code change under the guide's code_paths, without a doc update.
+          git -C "$fixture" checkout -q -b feature
+          printf 'b\n' > "$fixture/src/a.txt"
+          git -C "$fixture" commit -q -am 'Change the code only'
+          git -C "$fixture" checkout -q main
+          cat "$fixture/okf-wrapper.properties"
+          # The pinned jar is this build's: no release has it, so the cache holds it.
+          cache="$RUNNER_TEMP/okf-cli-cache/okf-cli/0.0.0-e2e.1"
+          mkdir -p "$cache"
+          cp "$jar" "$cache/okf-cli-0.0.0-e2e.1-all.jar"
+
+          # (c): a bundle pinned to the published 1.0.0-alpha.1, with an okf.yaml that version reads, an origin/main and
+          # no cached jar.
+          alpha="$RUNNER_TEMP/fixture-alpha1"
+          git init -q "$alpha"
+          git -C "$alpha" symbolic-ref HEAD refs/heads/main
+          printf '%s\n' 'schema_version: 1' 'repo: fixture-alpha1' 'index_language: en' 'index_command: ./okfw index' \
+            > "$alpha/okf.yaml"
+          mkdir -p "$alpha/docs"
+          printf '%s\n' '---' 'okf_version: "0.2"' '---' '# fixture-alpha1 docs' > "$alpha/docs/index.md"
+          printf '%s\n' 'version=1.0.0-alpha.1' \
+            'sha256=cadfdb7cb0d55e1b615e2662cca6cd48c554463f8c3e212753ceafea0303503b' > "$alpha/okf-wrapper.properties"
+          git -C "$alpha" add -A
+          git -C "$alpha" commit -q -m 'Fixture pinned to 1.0.0-alpha.1'
+          git init -q --bare "$RUNNER_TEMP/fixture-alpha1-origin.git"
+          git -C "$alpha" remote add origin "$RUNNER_TEMP/fixture-alpha1-origin.git"
+          git -C "$alpha" push -q -u origin main
+          rm -rf "$RUNNER_TEMP/okf-cli-cache/okf-cli/1.0.0-alpha.1"
+
+      - name: (a) Action on a clean bundle
+        id: clean
+        uses: ./
+        with:
+          repo: ${{ runner.temp }}/fixture
+          base: origin/main
+          impact-strict: 'true'
+
+      - name: (a) The version output names the pinned version
+        shell: bash
+        env:
+          VERSION: ${{ steps.clean.outputs.version }}
+        run: |
+          echo "version output: $VERSION"
+          test "$VERSION" = 0.0.0-e2e.1
+
+      - name: (a) Action on a clean bundle with base and impact-strict chosen from this event
+        uses: ./
+        with:
+          repo: ${{ runner.temp }}/fixture
+
+      - name: (a) The event names the default branch
+        shell: bash
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          echo "default branch: $DEFAULT_BRANCH"
+          test -n "$DEFAULT_BRANCH"
+
+      - name: (b) Check out the undocumented code change
+        shell: bash
+        run: git -C "$RUNNER_TEMP/fixture" checkout -q feature
+
+      - name: (b) Action on the undocumented code change
+        id: undocumented
+        continue-on-error: true
+        uses: ./
+        with:
+          repo: ${{ runner.temp }}/fixture
+          base: origin/main
+          impact-strict: 'true'
+
+      - name: (b) Action on the undocumented code change, impact findings as warnings
+        id: lenient
+        continue-on-error: true
+        uses: ./
+        with:
+          repo: ${{ runner.temp }}/fixture
+          base: origin/main
+          impact-strict: 'false'
+
+      - name: (b) The action failed only because of strictness
+        shell: bash
+        env:
+          STRICT: ${{ steps.undocumented.outcome }}
+          LENIENT: ${{ steps.lenient.outcome }}
+        run: |
+          echo "impact-strict true: $STRICT, impact-strict false: $LENIENT"
+          test "$STRICT" = failure
+          test "$LENIENT" = success
+
+      - name: (c) Action on a bundle pinned to 1.0.0-alpha.1 (downloads the release; check and impact)
+        id: alpha
+        uses: ./
+        with:
+          repo: ${{ runner.temp }}/fixture-alpha1
+          base: origin/main
+          impact-strict: 'true'
+
+      - name: (c) The version output names the pinned release, which is now in the cache
+        shell: bash
+        env:
+          VERSION: ${{ steps.alpha.outputs.version }}
+        run: |
+          echo "version output: $VERSION"
+          test "$VERSION" = 1.0.0-alpha.1
+          test -f "$RUNNER_TEMP/okf-cli-cache/okf-cli/1.0.0-alpha.1/okf-cli-1.0.0-alpha.1-all.jar"
