@@ -16,14 +16,17 @@ internal data class Run(val code: Int, val out: String, val err: String) {
 
 /** The real tools on this machine, found once. */
 internal object Host {
-    /** `git --exec-path`, e.g. `C:/Program Files/Git/mingw64/libexec/git-core`. */
+    /** Git for Windows' MSYSTEM prefixes: `<git>/<prefix>` holds `bin/curl.exe` and `libexec/git-core`. */
+    val MSYSTEM_PREFIXES = listOf("mingw64", "ucrt64", "clang64", "clangarm64", "mingw32")
+
+    /** `git --exec-path`, e.g. `<git>/mingw64/libexec/git-core` or `<git>/ucrt64/libexec/git-core` on Windows. */
     private val gitExecPath: File? by lazy {
         runCatching { File(run(listOf("git", "--exec-path"), File("."), emptyMap()).out.trim()) }.getOrNull()
     }
 
     /**
      * `sh.exe` as `okfw.cmd` finds it (Windows): `<git --exec-path>/../../../bin/sh.exe`, else `sh.exe` on the PATH. This
-     * Git for Windows launcher puts Git's own `mingw64/bin` and `usr/bin` in front of the PATH.
+     * Git for Windows launcher puts Git's own `<prefix>/bin` (see [gitPrefix]) and `usr/bin` in front of the PATH.
      */
     val shimSh: File by lazy {
         check(WINDOWS) { "Windows only" }
@@ -43,13 +46,45 @@ internal object Host {
     /** Git for Windows' `usr/bin` (holds `sh.exe`, the coreutils, `sha256sum`; no `curl`, `gh`, `java` or `shasum`). */
     val usrBin: File get() = sh.parentFile
 
+    /** The Git for Windows installation that holds [sh] (`<git>/usr/bin/sh.exe`). */
+    private val gitRoot: File get() = usrBin.parentFile.parentFile
+
+    /**
+     * The MSYSTEM prefix of the [gitRoot] installation (Windows), e.g. `mingw64` or `ucrt64`: `<prefix>` of
+     * `git --exec-path` (`<git>/<prefix>/libexec/git-core`) when that lies in this installation, else `null` (unknown).
+     */
+    val gitPrefix: String? by lazy {
+        check(WINDOWS) { "Windows only" }
+        val root = gitRoot.canonicalFile
+        gitExecPath?.canonicalFile
+            ?.takeIf { it.name == "git-core" && it.parentFile?.name == "libexec" }
+            ?.parentFile?.parentFile
+            ?.takeIf { it.parentFile == root }
+            ?.name
+    }
+
+    /**
+     * Git for Windows' own curl, which okfw.cmd users get through Git's sh.exe: `<git>/<prefix>/bin/curl.exe` for
+     * [gitPrefix], else for the first of [MSYSTEM_PREFIXES] that has one, else Windows' own `System32\curl.exe`.
+     */
+    private val gitCurl: File by lazy {
+        (listOfNotNull(gitPrefix) + MSYSTEM_PREFIXES).map { gitRoot.resolve("$it/bin/curl.exe") }.firstOrNull { it.isFile }
+            ?: File(System.getenv("SystemRoot") ?: "C:\\Windows", "System32\\curl.exe")
+    }
+
+    /**
+     * [dir] by its long name on Windows: the JVM's temp directory may be given in its 8.3 short form, which `cmd` keeps
+     * while PowerShell shows its location in the long form, so tests that compare a printed path work in the long form.
+     * Unchanged elsewhere (`toRealPath` would also resolve links, e.g. macOS `/var` to `/private/var`).
+     */
+    fun longName(dir: File): File = if (WINDOWS) dir.toPath().toRealPath().toFile() else dir
+
     /** The real executable [name] the harness links into a toolbox, or `null` when this machine has none. */
     fun tool(name: String): File? =
         if (WINDOWS) {
             when (name) {
                 "shasum" -> usrBin.resolve("core_perl/shasum")
-                // Git for Windows' own curl, which okfw.cmd users get through Git's sh.exe.
-                "curl" -> usrBin.parentFile.parentFile.resolve("mingw64/bin/curl.exe")
+                "curl" -> gitCurl
                 else -> usrBin.resolve("$name.exe")
             }.takeIf { it.isFile }
         } else {

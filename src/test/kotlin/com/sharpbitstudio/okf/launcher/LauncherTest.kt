@@ -19,7 +19,10 @@ import java.nio.file.attribute.PosixFilePermission
  */
 class LauncherTest {
     @TempDir
-    lateinit var tmp: File
+    lateinit var tempDir: File
+
+    /** [tempDir] by its long name on Windows ([Host.longName]): every shell then prints the paths in one form. */
+    private val tmp: File by lazy { Host.longName(tempDir) }
 
     private lateinit var box: LauncherSandbox
 
@@ -529,13 +532,16 @@ class LauncherTest {
         )
         val env = LauncherSandbox.CLEARED.filter { it != "PATH" }.associateWith<String, String?> { null } +
             ("NoDefaultCurrentDirectoryInExePath" to null)
+        // Git's bin/sh.exe puts its installation's `/<prefix>/bin` first (only a known prefix when that is unknown).
+        val gitPath = Host.gitPrefix?.let { Regex.escape("PATH=/$it/bin:/usr/bin:") }
+            ?: Host.MSYSTEM_PREFIXES.joinToString("|", "PATH=/(", ")/bin:/usr/bin:")
         for (code in 0..3) {
             val shells = shells(dir, "$code", "a b", "--base=")
             for ((name, run) in shells) {
                 assertEquals(code, run.code, "$name: $run")
                 assertEquals("[$code]\n[a b]\n[--base=]\n", run.lf().out, name)
                 assertTrue(run.err.contains("0=${dir.invariantSeparatorsPath}/okfw\n"), "$name: $run")
-                assertTrue(run.err.contains("PATH=/mingw64/bin:/usr/bin:"), "$name: Git's bin/sh.exe sets the PATH: $run")
+                assertTrue(Regex(gitPath).containsMatchIn(run.err), "$name: Git's bin/sh.exe sets the PATH: $run")
             }
         }
         // cmd keeps an empty argument (PowerShell drops one before okfw.cmd sees it).
