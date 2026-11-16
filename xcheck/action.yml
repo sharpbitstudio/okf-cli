@@ -1,0 +1,52 @@
+# The okf-cli xcheck action: clones an OKF hub's satellites and runs `okf xcheck` with the okf-cli version the hub pins
+# in okf-wrapper.properties, through this commit's copy of the launcher (launcher/okfw). Docs:
+# https://github.com/sharpbitstudio/okf-cli/blob/main/docs/github-actions.md
+#
+# It uses no other action: the caller checks out the hub (with fetch-depth: 0) and provides Java 17 or later. Every
+# input reaches the script through `env:`, never inside `run:`; the logic is in xcheck/xcheck.sh, and the token reaches
+# git only through xcheck/askpass.sh.
+name: okf-cli xcheck
+description: Clone an OKF hub's satellites and run okf xcheck with the okf-cli version the hub pins.
+author: SharpBit Studio
+
+inputs:
+  hub:
+    description: The hub's work-tree root, relative to the workspace; the pin is <hub>/okf-wrapper.properties.
+    required: false
+    default: .
+  satellites:
+    description: The satellites to clone, whitespace-separated, as owner/repo or repo (owned by the repository's owner). Empty clones nothing.
+    required: false
+    default: ''
+  token:
+    description: The token git uses for the clones; it needs read access to the contents of private satellites.
+    required: false
+    default: ${{ github.token }}
+  workspace:
+    description: The directory that holds every satellite as <workspace>/<repo>. Empty means <runner.temp>/okf-xcheck-workspace.
+    required: false
+    default: ''
+
+outputs:
+  report:
+    description: The path of the okf xcheck report; the file exists only when there was something to report.
+    value: ${{ steps.okf.outputs.report }}
+  exit-code:
+    description: The exit code of okf xcheck.
+    value: ${{ steps.okf.outputs.exit-code }}
+
+runs:
+  using: composite
+  steps:
+    - id: okf
+      shell: bash
+      env:
+        OKF_INPUT_HUB: ${{ inputs.hub }}
+        OKF_INPUT_SATELLITES: ${{ inputs.satellites }}
+        OKF_INPUT_TOKEN: ${{ inputs.token }}
+        OKF_INPUT_WORKSPACE: ${{ inputs.workspace }}
+        OKF_REPOSITORY_OWNER: ${{ github.repository_owner }}
+        OKF_DEFAULT_WORKSPACE: ${{ runner.temp }}/okf-xcheck-workspace
+        OKF_REPORT: ${{ runner.temp }}/okf-xcheck-report.md
+        OKFW_CACHE_DIR: ${{ runner.temp }}/okf-cli-cache
+      run: sh "$GITHUB_ACTION_PATH/xcheck.sh"

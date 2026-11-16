@@ -1,9 +1,9 @@
 ---
 type: Guide
 title: "The okf-cli GitHub Action"
-description: "How to run okf check and okf impact in a GitHub Actions workflow with the okf-cli GitHub Action: usage, inputs and output, how it chooses the impact base and strictness per event (Dependabot included), the full-history rule, requirements (Java, checkout, permissions), how the action's commit and the repository's pin relate, pull requests from forks, the optional provenance check, and its exit codes and messages. Read it before adding the action to a workflow or when an okf-cli action step fails."
-tags: [github-actions, action, ci, impact, pin, provenance]
-code_paths: ["action.yml", "action/**"]
+description: "How to run okf check and okf impact in a GitHub Actions workflow with the okf-cli GitHub Action: usage, inputs and output, how it chooses the impact base and strictness per event (Dependabot included), the full-history rule, requirements (Java, checkout, permissions), how the action's commit and the repository's pin relate, pull requests from forks, the optional provenance check, and its exit codes and messages. Also the xcheck action, which clones a hub's satellites and runs okf xcheck: usage, inputs and outputs, the token and permissions, exit codes and messages. Read it before adding either action to a workflow or when an okf-cli action step fails."
+tags: [github-actions, action, ci, impact, pin, provenance, xcheck]
+code_paths: ["action.yml", "action/**", "xcheck/**"]
 ---
 # The okf-cli GitHub Action
 
@@ -18,6 +18,9 @@ The action uses no other action: it does not check out, set up Java or cache any
 [`action/check.sh`](../action/check.sh) and [`action/impact-args.sh`](../action/impact-args.sh), POSIX `sh` scripts
 that [`action.yml`](../action.yml) runs in one `bash` step; every input and event fact reaches them through
 environment variables. Like the launcher, it only fetches, verifies and invokes the jar: every check is the jar's.
+
+A second action, in `xcheck/`, runs the cross-repo check of a hub and its satellites:
+[The xcheck action](#the-xcheck-action).
 
 ## Usage
 
@@ -165,3 +168,117 @@ The error annotations have the title `okf-cli`. Before each command, the action 
 passed on unchanged. The jar's annotations (`::error file=…`, `::warning file=…`) name files relative to `repo`, so
 with a `repo` other than the workspace root GitHub may not link them to the file: check out the repository at the
 workspace root for annotations that point at the offending line.
+
+## The xcheck action
+
+The directory `xcheck/` of this repository is a second action, for the hub of a federation
+([reference.md](reference.md#cross-repo-check-xcheck)). It clones the hub's satellites into a workspace and runs
+`okf xcheck` on the hub with the okf-cli version the hub pins in `<hub>/okf-wrapper.properties`, through the same
+copy of the launcher as the action above, so the hub's version reads every satellite's `okf.yaml`. Like that action,
+it uses no other action and parses no `okf.yaml`: its logic is in [`xcheck/xcheck.sh`](../xcheck/xcheck.sh), which
+[`xcheck/action.yml`](../xcheck/action.yml) runs in one `bash` step, and every check is the jar's.
+
+### Usage
+
+```yaml
+name: okf xcheck
+on:
+  schedule:
+    - cron: '0 6 * * 1'           # every Monday
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  xcheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0            # okf xcheck needs the hub's history
+          persist-credentials: false
+      - id: xcheck
+        uses: sharpbitstudio/okf-cli/xcheck@<commit-sha> # <version>
+        with:
+          satellites: web-app other-owner/api
+          token: ${{ secrets.SATELLITES_READ_TOKEN }}   # only for private satellites
+      - if: failure() && steps.xcheck.outputs.report != ''   # empty after an input or clone error
+        uses: actions/upload-artifact@v7
+        with:
+          name: okf-xcheck-report
+          path: ${{ steps.xcheck.outputs.report }}
+          if-no-files-found: ignore
+```
+
+Reference it by the full SHA of a commit of this repository, as the action above. The step fails when the
+federation has problems; the last step keeps the report (the job summary holds it too). A workflow may as well open
+or update an issue from the report, and close it when a run is clean: the report exists only when there is
+something to report.
+
+### Inputs and outputs
+
+| Input | Default | Meaning |
+|---|---|---|
+| `hub` | `.` | The hub's work-tree root, relative to the job's working directory (`GITHUB_WORKSPACE`); not empty. The pin is `<hub>/okf-wrapper.properties`. |
+| `satellites` | empty | The satellites to clone, separated by whitespace: `owner/repo`, or `repo` for a repository of the owner of the repository the workflow runs in. Empty: nothing is cloned. |
+| `token` | `github.token` | The token git uses for the clones (see [Token and permissions](#token-and-permissions)). |
+| `workspace` | empty: `<runner.temp>/okf-xcheck-workspace` | The directory that holds every satellite as `<workspace>/<repo>` (`okf xcheck --workspace`); a relative path is relative to the job's working directory. |
+
+- Every name (owner and repository) consists of letters, digits, `.`, `_` and `-`, and is not `.` or `..`. All
+  entries are checked before the first clone.
+- Each satellite is cloned from its default branch, with its full history and without tags, from
+  `<server>/<owner>/<repo>.git` (`<server>` is the `GITHUB_SERVER_URL` of the run) into `<workspace>/<repo>`.
+- A `<workspace>/<repo>` that already exists is used as it is, neither cloned nor updated. A job may thus check out
+  some satellites itself (with `actions/checkout` and its `path`) and list only the others, or none.
+
+| Output | Meaning |
+|---|---|
+| `report` | The path of the report of `okf xcheck --report` (`<runner.temp>/okf-xcheck-report.md`). The file exists only when the run found problems or warnings, or a setup error; the action also appends it to the job summary. |
+| `exit-code` | The exit code of `okf xcheck`, as the launcher returned it. |
+
+Both outputs are set once `okf xcheck` has run, not after an input or clone error. A report left at that path by an
+earlier run in the same job is removed when the action starts.
+
+### Token and permissions
+
+- git uses the token only when a server asks for credentials. It gets it through an askpass helper,
+  [`xcheck/askpass.sh`](../xcheck/askpass.sh), as the password of the user `x-access-token`, from a variable set for
+  each `git clone` alone. The token never appears in a URL, a command line or a git configuration, and it is not
+  passed on to the launcher or okf-cli.
+- Every clone runs with git's credential helpers switched off (`-c credential.helper=`) and without prompts
+  (`GIT_TERMINAL_PROMPT=0`, `GCM_INTERACTIVE=never`), so no credential is stored, and a missing or rejected token
+  fails the clone instead of waiting for input. Git LFS content is not downloaded (`GIT_LFS_SKIP_SMUDGE=1`).
+- The default, the workflow's `github.token`, can read the repository the workflow runs in, and public repositories
+  need no token. For private satellites, pass a secret holding a token with read access to their contents, such as
+  a fine-grained personal access token or a GitHub App installation token with the `Contents: read` permission.
+- The job needs `contents: read`, for the hub's checkout. The action writes to no repository.
+
+### Requirements
+
+As for the action above ([Requirements](#requirements)); the action's script uses `tr`, `cat` and `rm`. The
+hub's checkout needs its full history (`fetch-depth: 0`): `okf xcheck` reports a shallow clone anywhere in the
+federation as a failure. The jar is cached in the same place as for the action above. The `e2e` workflow of this
+repository runs the action on `ubuntu-latest`.
+
+### Exit codes and messages
+
+The step fails when the action exits with a code other than `0`:
+
+- `2` with one error annotation (title `okf-cli`), and `okf xcheck` not run:
+  - an empty `hub` (`input 'hub' must not be empty`);
+  - a `hub` or `workspace` that holds a line break, a tab or another control character
+    (`input '<name>' must be one line without control characters`);
+  - a satellite entry that is not a name or `owner/name`
+    (`input 'satellites': entry <n> is not owner/repo or repo (each name only letters, digits, '.', '_' and '-', and not '.' or '..')`;
+    entries are counted from 1 and not repeated in the log);
+  - a failed clone, after git's own message (`cannot clone <owner>/<repo>: git clone exited with <code>`); the
+    satellites cloned before it stay in the workspace;
+  - outside GitHub Actions only, no workspace at all (`input 'workspace' must not be empty`).
+- otherwise the exit code of `okf xcheck` ([reference.md](reference.md#cli)): `0` when the federation is clean or
+  has warnings only, `1` for problems, `2` for a setup error such as a satellite missing from the workspace; or the
+  launcher's `2` and `3` ([launcher.md](launcher.md#exit-codes-and-messages)).
+
+Before each clone, and before `okf xcheck`, the action writes one line to standard error:
+`okf-cli xcheck action: git -c credential.helper= clone --no-tags -- <url> <directory>`,
+`okf-cli xcheck action: <directory> exists, not cloned`, or
+`okf-cli xcheck action: okf xcheck --repo=<hub> --workspace=<workspace> --report=<file>`. The output of git, the
+launcher and the jar is passed on unchanged.
