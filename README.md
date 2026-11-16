@@ -17,13 +17,16 @@ published by Google Cloud for knowledge bundles: a directory of Markdown documen
 - `okf xcheck` runs in a hub repo and checks the hub and its satellite repos together: cross-repo code
   references, `hub:` / `repos:` links, drift between satellite notes and hub records, satellite index URLs.
 - `okf version` prints `okf-cli <version>`.
+- `okf init` starts a bundle: it writes `okf.yaml`, the bundle-root `docs/index.md` and, by default, the launcher.
+- `okf wrapper` writes or refreshes the launcher `okfw` (with `okfw.cmd`) and, when there is none, writes its pin
+  file `okf-wrapper.properties`, so `./okfw <command>` runs the okf-cli version the repository pins.
 
 ## OKF version
 
 | | |
 |---|---|
 | OKF spec implemented | v0.2: the bundle-root `index.md` must declare `okf_version: "0.2"` |
-| Latest published OKF spec | v0.2 (checked 2026-11-12) |
+| Latest published OKF spec | v0.2 (checked 2026-11-17) |
 
 How the checks relate to the spec:
 
@@ -47,68 +50,56 @@ major version (see [Compatibility](docs/reference.md#compatibility)).
 
 ## Status
 
-Pre-1.0. Releases are on the [releases page](https://github.com/sharpbitstudio/okf-cli/releases); the first is the
-pre-release `1.0.0-alpha.1`. Running the tool needs Java 17 or later and `git` on the `PATH`; building it from
-source needs JDK 17 or later (CI builds on JDK 25) and runs through the Gradle wrapper.
+Release candidate. Releases are on the [releases page](https://github.com/sharpbitstudio/okf-cli/releases); the
+latest is `1.0.0-rc.1`, a pre-release of 1.0.0 (pre-releases are exempt from the compatibility contract, which
+applies from 1.0.0). Running the tool needs Java 17 or later and `git` on the `PATH`; building it from source needs
+JDK 17 or later (CI builds on JDK 25) and runs through the Gradle wrapper.
 
-The released pre-release `1.0.0-alpha.1` has other defaults than `main`: `index_language: sr` and
-`index_command: ./gradlew okfIndex`. From the next release the defaults are `en` and `okf index`, and the generated
-ADR index links `adr/README.md` only when that file exists (`adr_readme_link`). The quick start below sets
-`index_language` and `index_command` and has no `adr/`, so it gives the same result with either; a bundle with
-`adr/` but no `adr/README.md` loses that link on upgrade unless it sets `adr_readme_link: always`. `main` also
-knows `okf.yaml` keys that `1.0.0-alpha.1` rejects as unknown: `base_ref`, `extra_types`, `drift_days`,
-`adr_readme_link`. `main` also has the new command `okf init` (it writes `okf.yaml` and the bundle root for a new
-bundle) and the launcher `okfw` with its pin file, written by `okf init` and `okf wrapper`
-([docs/launcher.md](docs/launcher.md)), which no release has yet. `main` also has a GitHub Action that runs
-`okf check` and `okf impact` with the pinned version ([docs/github-actions.md](docs/github-actions.md)); it is not
-part of a release yet.
+Upgrading from `1.0.0-alpha.1`: [`CHANGELOG.md`](CHANGELOG.md) lists what changed (defaults, new keys, console
+lines) and how to keep the old output.
 
 ## Quick start
 
-Download the self-contained jar and its checksum; the jar runs only after the checksum passes:
+In the root of the git work tree whose docs you want to check, download the self-contained jar and its checksum
+into a directory outside the work tree (here `$HOME/okf-cli`), then start a bundle with `okf init` and check it
+through the launcher. Each step runs only if the one before it passed, so nothing runs the jar unless the download
+and the checksum passed (`version` prints `okf-cli 1.0.0-rc.1`):
 
 ```bash
-VERSION=1.0.0-alpha.1
+VERSION=1.0.0-rc.1
 BASE="https://github.com/sharpbitstudio/okf-cli/releases/download/v$VERSION"
-curl -fsSLO "$BASE/okf-cli-$VERSION-all.jar" &&
-  curl -fsSLO "$BASE/okf-cli-$VERSION-all.jar.sha256" &&
-  sha256sum -c "okf-cli-$VERSION-all.jar.sha256" &&
-  java -jar "okf-cli-$VERSION-all.jar" version     # okf-cli 1.0.0-alpha.1
+DL="$HOME/okf-cli"
+JAR="$DL/okf-cli-$VERSION-all.jar"
+mkdir -p "$DL" &&
+  (cd "$DL" &&
+    curl -fsSLO "$BASE/okf-cli-$VERSION-all.jar" &&
+    curl -fsSLO "$BASE/okf-cli-$VERSION-all.jar.sha256" &&
+    sha256sum -c "okf-cli-$VERSION-all.jar.sha256") &&
+  java -jar "$JAR" version &&
+  java -jar "$JAR" init &&
+  git add okf.yaml docs/index.md okfw okfw.cmd okf-wrapper.properties .gitattributes &&
+  git add --chmod=+x okfw &&
+  ./okfw check --strict --refs-strict --code-paths-required
 ```
 
-[`docs/build-release.md`](docs/build-release.md#release) also shows how to verify its build provenance. To build
-the jar from source instead, follow the "Build" section of [`docs/build-release.md`](docs/build-release.md#build),
-which produces `build/libs/okf-cli-<version>-all.jar`.
+Where there is no `sha256sum` (macOS has `shasum`), use `shasum -a 256 -c` in its place.
 
-Copy the jar into the repository whose docs you want to check (here as `tools/okf-cli.jar`) and add an `okf.yaml`
-at the root:
+`okf init` writes `okf.yaml`, the bundle root `docs/index.md`, the launcher `okfw` / `okfw.cmd`, the pin
+`okf-wrapper.properties` with the SHA-256 of the jar it ran from ([`docs/launcher.md`](docs/launcher.md)) and,
+when there is none, a `.gitattributes` that keeps the launcher's line ends; commit them. From then on,
+`./okfw <command>` downloads the pinned jar once into a per-user cache and checks it before every run.
+[`docs/build-release.md`](docs/build-release.md#release) also shows how to verify the jar's build provenance, on
+which the pin then rests. To build the jar from source instead, follow the "Build" section of
+[`docs/build-release.md`](docs/build-release.md#build), which produces `build/libs/okf-cli-<version>-all.jar`.
 
-```yaml
-schema_version: 1
-repo: my-repo
-index_language: en
-index_command: java -jar tools/okf-cli.jar index
-```
+- A repository that already has `okf.yaml` gets the launcher and the pin with `java -jar "$JAR" wrapper` instead of
+  `init` (then stage the files without `okf.yaml` and `docs/index.md`).
+- In CI, the GitHub Action runs `check` and `impact` with the pinned version, and the xcheck action runs a hub's
+  cross-repo check ([`docs/github-actions.md`](docs/github-actions.md)).
+- Without the launcher, run the jar with `java -jar` ([`docs/reference.md`](docs/reference.md#running-it)).
 
-and a bundle root `docs/index.md`:
-
-```markdown
----
-okf_version: "0.2"
----
-# my-repo — docs
-```
-
-Then run, from the root of the git work tree:
-
-```bash
-java -jar tools/okf-cli.jar index
-java -jar tools/okf-cli.jar check --strict --refs-strict --code-paths-required
-java -jar tools/okf-cli.jar impact --base=origin/main --impact-strict
-```
-
-`index_command` is the command named in the generated indexes and in every "run …" hint; it must be one line.
-All `okf.yaml` keys and their rules are in [`docs/reference.md`](docs/reference.md).
+`okf init` sets `index_command: ./okfw index`, the command named in the generated indexes and in every "run …"
+hint; it must be one line. All `okf.yaml` keys and their rules are in [`docs/reference.md`](docs/reference.md).
 
 ## Exit codes and CI annotations
 
@@ -124,6 +115,10 @@ The documentation is this repo's own OKF bundle ([`docs/index.md`](docs/index.md
 
 - [`docs/reference.md`](docs/reference.md): the CLI (options, exit codes), the `okf.yaml` schema, the bundle
   rules, the cross-repo check (`xcheck`), how to run the tool, and the compatibility contract;
+- [`docs/launcher.md`](docs/launcher.md): the launcher `okfw`, its pin file, `okfw --update` / `--verify` and the
+  provenance policy;
+- [`docs/github-actions.md`](docs/github-actions.md): the GitHub Action (`check` and `impact`) and the xcheck
+  action (a hub's cross-repo check) for CI;
 - [`docs/build-release.md`](docs/build-release.md): build, CI, the release flow and how to verify release
   assets, the self-check of `docs/`, third-party licences;
 - [`CHANGELOG.md`](CHANGELOG.md): changes per version.
