@@ -112,8 +112,11 @@ this repo and its own concurrency group. Its jobs are not required checks:
   unreachable-base path (a non-strict skip with a warning annotation); on other events it exercises the real
   selection (for a fork pull request the job pushes the fixture's `main` as the pull request's base branch, so
   `origin/<base branch>` exists). The job also checks that the event names the default branch. A third fixture,
-  with an `origin/main`, pins the published `1.0.0-alpha.1`, which the action downloads from the release, and runs
-  `check` and `impact` with it.
+  with an `origin/main`, pins the published `1.0.0-alpha.1`, which the action downloads from the release, checks
+  with `verify-provenance` (`okfw --verify` with the runner's `gh`) and runs `check` and `impact` with. On
+  `ubuntu-latest` the job also runs the release workflow's attestation check (see [Release](#release)) as written
+  there, tokenless, on that release's jar and Sigstore bundle: it passes with the commit the release was built from
+  and fails with another commit.
 - **`xcheck action`** on `ubuntu-latest`: the xcheck action of the commit (`uses: ./xcheck`,
   [github-actions.md](github-actions.md#the-xcheck-action)). It builds the `all` jar as `0.0.0-e2e.1`, whose
   `okf init` writes a fixture hub with a pin naming that jar (the action's cache is seeded with it), and fills a
@@ -154,14 +157,18 @@ The workflow has read-only permissions, except for its second job:
 2. **`release-assets`** runs after `build`. It is the only job with `contents: write`, `id-token: write` and
    `attestations: write`, and it never runs Gradle (it has no checkout). It downloads the artifact and verifies it
    with `sha256sum -c` and against the hash from `build`. It stops if the tag `v<version>`, or a release or draft
-   for it, already exists; it checks this before attesting, so a run that stops there leaves no attestation
-   behind. It then creates a build-provenance attestation for the jar with `actions/attest` (SLSA provenance),
-   checks that the attestation's Sigstore bundle holds exactly one entry, and verifies the attestation against
-   that bundle (predicate type, signer workflow, source ref and commit). Finally it creates the draft release
-   `v<version>` targeting the built commit, with three assets: `okf-cli-<version>-all.jar`,
-   `okf-cli-<version>-all.jar.sha256` and the bundle as `okf-cli-<version>-all.jar.sigstore.json`. The draft is
-   marked as a pre-release when the version has a pre-release part. The job checks afterwards that exactly one
-   draft for the tag exists, and it never deletes a release.
+   for it, already exists, or if the runner's `gh` is older than 2.102.0 (the launcher's minimum, with the
+   launcher's rule: a pre-release counts as older than its release); it checks both before attesting, so a run
+   that stops there leaves no attestation behind. It then creates a build-provenance attestation for the jar with
+   `actions/attest` (SLSA provenance), checks that the attestation's Sigstore bundle holds exactly one entry, and
+   verifies the attestation against that bundle with the policy of `okfw --update` and `okfw --verify` (the
+   consumer command below: predicate type, exact signer identity, source ref, GitHub-hosted runners) plus the built
+   commit, tokenless as the launcher runs it (no token or host from the environment, a new empty `gh`
+   configuration directory). Finally it creates the draft release `v<version>` targeting the built commit, with
+   three assets: `okf-cli-<version>-all.jar`, `okf-cli-<version>-all.jar.sha256` and the bundle as
+   `okf-cli-<version>-all.jar.sigstore.json`. The draft is marked as a pre-release when the version has a
+   pre-release part, and its notes show the consumer commands below with the version filled in. The job checks
+   afterwards that exactly one draft for the tag exists, and it never deletes a release.
 
 The workflow never publishes a release or creates its tag. A failed run can leave a partial draft, visible only
 to maintainers (a maintainer deletes it in the UI before running again), and public provenance records (the

@@ -245,6 +245,35 @@ jobs:
             exit 1
           fi
 
+      # The oldest GitHub CLI the launcher accepts, with the launcher's rule (launcher/okfw: okfw_gh_floor and
+      # okfw_find_gh): gh before 2.102.0 has advisories about the checks of the verify step below. Checked before
+      # attesting, so a run that stops here leaves no attestation behind.
+      - name: The GitHub CLI is 2.102.0 or later
+        run: |
+          set -euo pipefail
+          FLOOR=2.102.0
+          OUT="$(gh --version)" || OUT=
+          printf '%s\n' "$OUT"
+          # The first line reads `gh version X.Y.Z (date)`; a pre-release of X.Y.Z comes before X.Y.Z.
+          FOUND="$(printf '%s\n' "$OUT" | tr -d '\r' | sed -n '1s/^gh version \([^ ]*\).*$/\1/p')"
+          VERSION_FORM='^[0-9]{1,9}\.[0-9]{1,9}\.[0-9]{1,9}(-[0-9A-Za-z.-]+)?$'
+          if [ "${#FOUND}" -gt 64 ] || ! [[ "$FOUND" =~ $VERSION_FORM ]]; then
+            echo "::error::gh (unknown version) is too old: the release needs gh $FLOOR or later"
+            exit 1
+          fi
+          # X.Y.Z against the floor, part by part, as numbers.
+          IFS=. read -r -a HAVE <<< "${FOUND%%-*}"
+          IFS=. read -r -a NEED <<< "$FLOOR"
+          ORDER=same
+          for i in 0 1 2; do
+            if [ "${HAVE[$i]}" -gt "${NEED[$i]}" ]; then ORDER=newer; break; fi
+            if [ "${HAVE[$i]}" -lt "${NEED[$i]}" ]; then ORDER=older; break; fi
+          done
+          if [ "$ORDER" = older ] || { [ "$ORDER" = same ] && [ "$FOUND" != "${FOUND%%-*}" ]; }; then
+            echo "::error::gh $FOUND is too old: the release needs gh $FLOOR or later"
+            exit 1
+          fi
+
       - name: Attest build provenance
         id: attest
         uses: actions/attest@v4
@@ -262,20 +291,26 @@ jobs:
           [ "$(grep -c '' "$BUNDLE")" = 1 ] || { echo "::error::Expected exactly one attestation bundle in $BUNDLE"; exit 1; }
           cp "$BUNDLE" "okf-cli-$VERSION-all.jar.sigstore.json"
 
-      # Without the attestations API, against exactly the bundle that will be published: SLSA build provenance
-      # from this workflow, on main, at the built commit.
+      # Without the attestations API, against exactly the bundle that will be published, as deployed launchers and
+      # consumers check it: the arguments of launcher/okfw (okfw_provenance, with okfw_repo, okfw_workflow and
+      # okfw_source_ref) as literals, plus the built commit. So a release that passes here passes every deployed
+      # launcher, and a fork's run fails here. Tokenless like okfw_gh: no token or host from the environment (unset
+      # explicitly, so a later workflow-level env cannot add one), a new empty configuration directory, no update
+      # check or prompt.
       - name: Verify the attestation
         env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
           VERSION: ${{ needs.build.outputs.version }}
         run: |
           set -euo pipefail
-          gh attestation verify "okf-cli-$VERSION-all.jar" --repo "$GH_REPO" \
-            --bundle "okf-cli-$VERSION-all.jar.sigstore.json" \
+          GH_CONFIG="$(mktemp -d "$RUNNER_TEMP/gh-config.XXXXXX")"
+          env -u GH_TOKEN -u GITHUB_TOKEN -u GH_ENTERPRISE_TOKEN -u GITHUB_ENTERPRISE_TOKEN -u GH_HOST \
+            GH_CONFIG_DIR="$GH_CONFIG" GH_NO_UPDATE_NOTIFIER=1 GH_PROMPT_DISABLED=1 \
+            gh attestation verify "okf-cli-$VERSION-all.jar" --bundle "okf-cli-$VERSION-all.jar.sigstore.json" \
+            --repo sharpbitstudio/okf-cli \
             --predicate-type https://slsa.dev/provenance/v1 \
-            --signer-workflow "$GH_REPO/.github/workflows/release.yml" \
-            --source-ref refs/heads/main --source-digest "$GITHUB_SHA"
+            --cert-identity https://github.com/sharpbitstudio/okf-cli/.github/workflows/release.yml@refs/heads/main \
+            --source-ref refs/heads/main --deny-self-hosted-runners \
+            --source-digest "$GITHUB_SHA"
 
       - name: Draft the release
         env:
@@ -297,16 +332,20 @@ jobs:
               printf '\nThis is a pre-release. Pre-releases are exempt from the compatibility contract ([docs/reference.md](%s/docs/reference.md#compatibility)).\n' "$LINK"
             fi
             printf '\n`%s` is the self-contained CLI: it runs with `java -jar` on Java 17 or later and needs `git` on the `PATH`.\n' "$JAR"
-            printf '\nVerify a download:\n\n```bash\n'
+            # The consumer commands of docs/build-release.md ("Release"), with the version filled in.
+            printf '\nVerify a download with the GitHub CLI 2.102.0 or later:\n\n```bash\n'
             printf 'sha256sum -c %s.sha256\n' "$JAR"
             printf '# build provenance, without a GitHub account (the bundle is the third asset):\n'
-            printf 'gh attestation verify %s --repo %s \\\n' "$JAR" "$GH_REPO"
-            printf '  --bundle %s.sigstore.json \\\n' "$JAR"
-            printf '  --signer-workflow %s/.github/workflows/release.yml --source-ref refs/heads/main\n' "$GH_REPO"
+            printf 'gh attestation verify %s --repo sharpbitstudio/okf-cli \\\n' "$JAR"
+            printf '  --bundle %s.sigstore.json --predicate-type https://slsa.dev/provenance/v1 \\\n' "$JAR"
+            printf '  --cert-identity https://github.com/sharpbitstudio/okf-cli/.github/workflows/release.yml@refs/heads/main \\\n'
+            printf '  --source-ref refs/heads/main --deny-self-hosted-runners\n'
             printf '# with a GitHub login: the same check online, and the release attestation that ties the jar to the tag\n'
-            printf 'gh attestation verify %s --repo %s \\\n' "$JAR" "$GH_REPO"
-            printf '  --signer-workflow %s/.github/workflows/release.yml --source-ref refs/heads/main\n' "$GH_REPO"
-            printf 'gh release verify-asset %s %s --repo %s\n' "$TAG" "$JAR" "$GH_REPO"
+            printf 'gh attestation verify %s --repo sharpbitstudio/okf-cli \\\n' "$JAR"
+            printf '  --predicate-type https://slsa.dev/provenance/v1 \\\n'
+            printf '  --cert-identity https://github.com/sharpbitstudio/okf-cli/.github/workflows/release.yml@refs/heads/main \\\n'
+            printf '  --source-ref refs/heads/main --deny-self-hosted-runners\n'
+            printf 'gh release verify-asset %s %s --repo sharpbitstudio/okf-cli\n' "$TAG" "$JAR"
             printf '```\n\nSHA-256: `%s`. Built from commit `%s`.\n' "$SHA256" "$GITHUB_SHA"
           } > notes.md
           URL="$(gh release create "$TAG" "$JAR" "$JAR.sha256" "$JAR.sigstore.json" --draft --target "$GITHUB_SHA" \

@@ -95,6 +95,9 @@ committed indexes are stale. Run the index command once, or set `index_language:
   helper, with credential helpers off and no prompts) and `workspace`; outputs `report` and `exit-code`. Exit `2`
   with an `okf-cli` error annotation for an invalid input or a failed clone, the code of `okf xcheck` otherwise.
   See `docs/github-actions.md`.
+- Releases: the release workflow checks the attestation with the policy of `okfw --update` (exact signer identity,
+  source ref, GitHub-hosted runners) and the built commit, with `gh` 2.102.0 or later, and the release notes show
+  the commands of `docs/build-release.md`.
 
 ## 1.0.0-alpha.1 — 2026-11-12
 
