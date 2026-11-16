@@ -28,7 +28,8 @@ permissions:
 # and okfw.cmd under cmd and PowerShell on Windows) plus `networkTest`, which downloads the published
 # 1.0.0-alpha.1 with real curl and runs okfw --verify / --update against it with the runner's gh (on GitHub Actions a
 # missing gh or one older than the launcher's floor fails those cases). The GitHub Action (action.yml,
-# docs/github-actions.md) runs as `uses: ./` against fixture repositories on the same three systems, and the xcheck
+# docs/github-actions.md) runs as `uses: ./` against fixture repositories on the same three systems (with
+# verify-provenance on the published release; on ubuntu also release.yml's attestation check of it), and the xcheck
 # action (xcheck/action.yml) as `uses: ./xcheck` against a fixture federation on ubuntu. These jobs are not required
 # checks.
 jobs:
@@ -132,7 +133,9 @@ jobs:
   action:
     # The GitHub Action of this commit (`uses: ./`) against fixture repositories: a bundle `init` wrote with this
     # commit's jar (built as a release-like version, so the pin names it; the cache is seeded with it), clean and with
-    # an undocumented code change, and a bundle pinned to the published 1.0.0-alpha.1, which the launcher downloads.
+    # an undocumented code change, and a bundle pinned to the published 1.0.0-alpha.1, which the launcher downloads
+    # and checks with okfw --verify (the runner's gh). On ubuntu, release.yml's tokenless attestation check also runs
+    # on that release.
     # Explicit inputs keep the cases the same on every event; ImpactArgsTest covers the `auto` selection. One run here
     # leaves base and impact-strict at `auto` on the clean bundle: on a push to main it passes this repository's
     # `before`, which the fixture does not have, so it exercises the CLI's unreachable-base path (a non-strict skip with
@@ -314,13 +317,14 @@ jobs:
           test "$STRICT" = failure
           test "$LENIENT" = success
 
-      - name: (c) Action on a bundle pinned to 1.0.0-alpha.1 (downloads the release; check and impact)
+      - name: (c) Action on a bundle pinned to 1.0.0-alpha.1 (downloads the release; okfw --verify, check and impact)
         id: alpha
         uses: ./
         with:
           repo: ${{ runner.temp }}/fixture-alpha1
           base: origin/main
           impact-strict: 'true'
+          verify-provenance: 'true'
 
       - name: (c) The version output names the pinned release, which is now in the cache
         shell: bash
@@ -330,6 +334,41 @@ jobs:
           echo "version output: $VERSION"
           test "$VERSION" = 1.0.0-alpha.1
           test -f "$RUNNER_TEMP/okf-cli-cache/okf-cli/1.0.0-alpha.1/okf-cli-1.0.0-alpha.1-all.jar"
+
+      # The command of release.yml's "Verify the attestation" (keep the two in step), tokenless and with the runner's
+      # gh as in a release run, on the published 1.0.0-alpha.1 and its Sigstore bundle: it passes with the commit that
+      # release was built from and fails with another commit. Once, on ubuntu.
+      - name: (c) The release workflow's attestation check on 1.0.0-alpha.1
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION=1.0.0-alpha.1
+          cd "$(mktemp -d "$RUNNER_TEMP/release-verify.XXXXXX")"
+          for file in "okf-cli-$VERSION-all.jar" "okf-cli-$VERSION-all.jar.sha256" "okf-cli-$VERSION-all.jar.sigstore.json"; do
+            curl -q -fsSLO "https://github.com/sharpbitstudio/okf-cli/releases/download/v$VERSION/$file"
+          done
+          sha256sum -c "okf-cli-$VERSION-all.jar.sha256"
+          # $1: the commit the attestation must name as its source.
+          release_verify() {
+            GH_CONFIG="$(mktemp -d "$RUNNER_TEMP/gh-config.XXXXXX")"
+            env -u GH_TOKEN -u GITHUB_TOKEN -u GH_ENTERPRISE_TOKEN -u GITHUB_ENTERPRISE_TOKEN -u GH_HOST \
+              GH_CONFIG_DIR="$GH_CONFIG" GH_NO_UPDATE_NOTIFIER=1 GH_PROMPT_DISABLED=1 \
+              gh attestation verify "okf-cli-$VERSION-all.jar" --bundle "okf-cli-$VERSION-all.jar.sigstore.json" \
+              --repo sharpbitstudio/okf-cli \
+              --predicate-type https://slsa.dev/provenance/v1 \
+              --cert-identity https://github.com/sharpbitstudio/okf-cli/.github/workflows/release.yml@refs/heads/main \
+              --source-ref refs/heads/main --deny-self-hosted-runners \
+              --source-digest "$1"
+          }
+          gh --version
+          release_verify c484ae24411600e2990a6d7e20cf554edb6ea695
+          # Control: the parent of that commit. gh's output stays in the log, so its reason can be read there.
+          echo "Control, expected to fail with a source digest mismatch:"
+          if release_verify 8e0ff3b0f81b643687833a0a14d732aae5854994; then
+            echo "::error::the attestation check passed with a commit the release was not built from"
+            exit 1
+          fi
 
   xcheck-action:
     # The xcheck action of this commit (`uses: ./xcheck`) against a fixture federation: a hub written by this commit's
