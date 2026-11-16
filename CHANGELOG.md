@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 1.0.0-rc.1 — 2026-11-17
+
+Release candidate of 1.0.0. Pre-releases are exempt from the compatibility contract; 1.0.0 will be under it.
 
 Upgrading from `1.0.0-alpha.1`: an `okf.yaml` that leaves `index_language` unset now gets English index text, and
 one that leaves `index_command` unset gets `okf index` in the generated marker and the "run …" hints; either way its
@@ -95,9 +97,13 @@ committed indexes are stale. Run the index command once, or set `index_language:
   helper, with credential helpers off and no prompts) and `workspace`; outputs `report` and `exit-code`. Exit `2`
   with an `okf-cli` error annotation for an invalid input or a failed clone, the code of `okf xcheck` otherwise.
   See `docs/github-actions.md`.
+- CI: an `e2e` workflow runs the launcher, its network tests and the GitHub Action on Linux, macOS and Windows, and
+  the xcheck action on Linux; the Java 17 smoke test's fixture has an ADR; Dependabot version updates are on
+  (`docs/build-release.md`).
 - Releases: the release workflow checks the attestation with the policy of `okfw --update` (exact signer identity,
   source ref, GitHub-hosted runners) and the built commit, with `gh` 2.102.0 or later, and the release notes show
   the commands of `docs/build-release.md`.
+- Docs: the README quick start starts a bundle with `okf init` and runs it through `./okfw`.
 
 ## 1.0.0-alpha.1 — 2026-11-12
 
