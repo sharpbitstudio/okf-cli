@@ -104,8 +104,8 @@ tasks.assemble {
 }
 
 /**
- * System properties of the test JVMs: `okf.repoRoot` (this checkout, for the committed `launcher/`, `action/` and
- * `action.yml`) and `okf.allJar` (this build's `all` jar, which LauncherJarTest runs through the launcher). The jar is
+ * System properties of the test JVMs: `okf.repoRoot` (this checkout, for the committed `launcher/`, `action/`,
+ * `action.yml` and `xcheck/`) and `okf.allJar` (this build's `all` jar, which LauncherJarTest runs through the launcher). The jar is
  * an input, so `test` builds it first.
  */
 abstract class LauncherTestProperties : CommandLineArgumentProvider {
@@ -126,6 +126,8 @@ fun Test.launcherTestProperties() {
     // The GitHub Action's files, which the action tests read from okf.repoRoot.
     inputs.dir(layout.projectDirectory.dir("action")).withPropertyName("action").withPathSensitivity(PathSensitivity.RELATIVE)
     inputs.file(layout.projectDirectory.file("action.yml")).withPropertyName("actionYml").withPathSensitivity(PathSensitivity.RELATIVE)
+    // The xcheck action's files (xcheck/action.yml and its scripts), which XcheckActionTest runs from okf.repoRoot.
+    inputs.dir(layout.projectDirectory.dir("xcheck")).withPropertyName("xcheck").withPathSensitivity(PathSensitivity.RELATIVE)
     jvmArgumentProviders.add(
         objects.newInstance<LauncherTestProperties>().apply {
             repoRoot.set(layout.projectDirectory.asFile.absolutePath)

@@ -523,8 +523,9 @@ With these task names, `index_command: ./gradlew okfIndex` names the task that r
   before every run. Output of `curl`, `gh`, `sh.exe` and Java, and the cache layout, are not.
 - The minimum `gh` version and the provenance policy of `okfw --update` and `okfw --verify` may be tightened in any
   release; each change is listed in `CHANGELOG.md`.
-- The GitHub Action ([github-actions.md](github-actions.md)): input and output names, defaults and the base/strictness
-  table are covered for a given commit; it is referenced by commit, and a later commit may add inputs.
+- The GitHub Actions ([github-actions.md](github-actions.md)): input and output names, defaults and the
+  base/strictness table are covered for a given commit; they are referenced by commit, and a later commit may add
+  inputs.
 - Input that a version rejects may be valid in a later minor version: a new optional key or a new allowed value
   turns the former `okf.yaml` error (exit `2`) or finding into accepted input. The other direction is covered by
   the first rule: input that is valid stays valid, with the same output.

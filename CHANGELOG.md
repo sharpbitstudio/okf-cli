@@ -87,6 +87,14 @@ committed indexes are stale. Run the index command once, or set `index_language:
   Dependabot recognised by pull request author or actor), `verify-provenance` (`okfw --verify` first); output
   `version`. Exit `2` with an `okf-cli` error annotation for an invalid input or a shallow clone with impact on. It
   uses no other action and needs Java 17 or later on the runner. See `docs/github-actions.md`.
+- GitHub Action for the cross-repo check (`uses: sharpbitstudio/okf-cli/xcheck@<commit-sha>`, `xcheck/action.yml`):
+  clones a hub's satellites (input `satellites`: `owner/repo` or `repo`, each name checked before the first clone;
+  full history, no tags, from the default branch) into `<workspace>/<repo>`, keeping a directory already there,
+  and runs `okf xcheck` with the version the hub pins, through the launcher; the report is appended to the job
+  summary. Inputs `hub`, `satellites`, `token` (default `github.token`; given to git only through an askpass
+  helper, with credential helpers off and no prompts) and `workspace`; outputs `report` and `exit-code`. Exit `2`
+  with an `okf-cli` error annotation for an invalid input or a failed clone, the code of `okf xcheck` otherwise.
+  See `docs/github-actions.md`.
 
 ## 1.0.0-alpha.1 — 2026-11-12
 
