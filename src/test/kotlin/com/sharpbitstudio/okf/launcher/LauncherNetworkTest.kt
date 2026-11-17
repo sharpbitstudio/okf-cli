@@ -15,11 +15,16 @@ import java.nio.file.Files
 /**
  * The launcher against a published release over the network (`./gradlew networkTest`, not part of `check`): real `sh`,
  * real `curl` (linked into the toolbox), real Java (the test JVM's, through `JAVA_HOME`), an empty cache. The release is
- * `1.0.0-rc.1`, whose version and SHA-256 are public and immutable; the `--update` case of a release without
- * `okf wrapper` uses `1.0.0-alpha.1`, likewise published. GitHub tokens are removed from every child. The `--update`
- * and `--verify` cases also use the real `gh`, which must be 2.102.0 or later (the launcher's floor): where the `gh` on
- * the PATH is missing or older, they are skipped, except on GitHub Actions (`GITHUB_ACTIONS=true`), where that fails
- * them. The full `--update` case also needs the real `git` on the PATH (the jar's `okf wrapper` runs it).
+ * the latest published one ([VERSION]), whose version and SHA-256 are public and immutable; the update from the
+ * previous release starts from [PREVIOUS_VERSION], and the `--update` case of a release without `okf wrapper` uses
+ * [ALPHA_VERSION], both likewise published. GitHub tokens are removed from every child. The `--update` and `--verify`
+ * cases also use the real `gh`, which must be 2.102.0 or later (the launcher's floor): where the `gh` on the PATH is
+ * missing or older, they are skipped, except on GitHub Actions (`GITHUB_ACTIONS=true`), where that fails them. The
+ * `--update` cases in a git work tree also need the real `git` on the PATH (the jar's `okf wrapper` runs it).
+ *
+ * The expectations build the published jar's console lines from this build's `Launcher` constants (`PIN`,
+ * `ATTRIBUTES`, `CHMOD_NOTICE`): console lines are under the compatibility contract within a major version, so they
+ * cannot drift. Should such a constant ever change, the expectations here must become literals of the release tested.
  */
 @Tag("network")
 class LauncherNetworkTest {
@@ -104,6 +109,45 @@ class LauncherNetworkTest {
         )
         assertArrayEquals(Launcher.pin(VERSION, SHA256), box.repo.resolve(Launcher.PIN).readBytes())
         assertEquals("", git("status", "--porcelain"))
+    }
+
+    /**
+     * An update from the previous release in a git work tree with the real `git`: after `--update` [PREVIOUS_VERSION]
+     * and a commit, `--update` [VERSION] (run by the launcher the previous release wrote, as in a consumer's repo) pins
+     * the new release, whose `okf wrapper` finds the launcher files the previous release's `okf wrapper` wrote, and
+     * keeps the pin it was just given and `.gitattributes` as they are. Only the pin changes: that holds because
+     * `launcher/` is byte-identical in both releases; when a release changes the launcher files, the `git status`
+     * assertion below has to list them too.
+     */
+    @Test
+    fun `okfw --update from the previous release pins the new one and changes only the pin`() {
+        realGh()
+        box.launcher()
+        val path = realGit()
+        box.toolbox(LauncherSandbox.BASE_TOOLS + Host.shaTool + "curl" + "gh")
+
+        val previous = okfwWithGit(path, "--update", PREVIOUS_VERSION).lf()
+        assertEquals(0, previous.code, previous.toString())
+        assertArrayEquals(Launcher.pin(PREVIOUS_VERSION, PREVIOUS_SHA256), box.repo.resolve(Launcher.PIN).readBytes())
+        git("add", "-A")
+        git("commit", "-q", "-m", "pin the previous release")
+
+        val update = okfwWithGit(path, "--update", VERSION).lf()
+        assertEquals(0, update.code, update.toString())
+        assertTrue(
+            Regex(
+                "okfw: pinned okf-cli ${Regex.escape(VERSION)} \\(sha256 $SHA256\\)\n" +
+                    "\\[(unchanged|updated)] okfw\n\\[(unchanged|updated)] okfw\\.cmd\n" +
+                    "\\[kept] ${Regex.escape(Launcher.PIN)}\n" +
+                    "${Regex.escape(Launcher.CHMOD_NOTICE)}\nokf wrapper OK: [0-9]+ file\\(s\\) written\\.\n",
+            ).matches(update.out),
+            update.out,
+        )
+        assertArrayEquals(Launcher.pin(VERSION, SHA256), box.repo.resolve(Launcher.PIN).readBytes())
+        assertEquals("M ${Launcher.PIN}", git("status", "--porcelain"))
+
+        val version = okfwWithGit(path, "version").lf()
+        assertEquals(Run(0, "okf-cli $VERSION\n", ""), version)
     }
 
     /**
@@ -225,8 +269,13 @@ class LauncherNetworkTest {
         System.getenv("PATH").orEmpty().split(File.pathSeparator).filter { it.isNotEmpty() }.map { File(it, name) }.firstOrNull { it.isFile }
 
     private companion object {
-        const val VERSION = "1.0.0-rc.1"
-        const val SHA256 = "5ce703dada54b6a802ce2309ffc13aa8cffb456e7f4d27dbe20be0b7848d6983"
+        /** The latest published release. */
+        const val VERSION = "1.0.0"
+        const val SHA256 = "8e34a049720d05181510b91aa778dd95b9a4399a483dd774f9068cc22fc40012"
+
+        /** The published release before [VERSION]: the starting point of the update case. */
+        const val PREVIOUS_VERSION = "1.0.0-rc.1"
+        const val PREVIOUS_SHA256 = "5ce703dada54b6a802ce2309ffc13aa8cffb456e7f4d27dbe20be0b7848d6983"
 
         /** A published release without `okf wrapper`. */
         const val ALPHA_VERSION = "1.0.0-alpha.1"
