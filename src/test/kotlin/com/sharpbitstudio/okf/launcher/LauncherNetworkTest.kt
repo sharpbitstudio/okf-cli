@@ -10,14 +10,16 @@ import org.junit.jupiter.api.Tag
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.io.File
+import java.nio.file.Files
 
 /**
  * The launcher against a published release over the network (`./gradlew networkTest`, not part of `check`): real `sh`,
  * real `curl` (linked into the toolbox), real Java (the test JVM's, through `JAVA_HOME`), an empty cache. The release is
- * `1.0.0-alpha.1`, whose version and SHA-256 are public and immutable. GitHub tokens are removed from every child. The
- * `--update` and `--verify` cases also use the real `gh`, which must be 2.102.0 or later (the launcher's floor): where
- * the `gh` on the PATH is missing or older, they are skipped, except on GitHub Actions (`GITHUB_ACTIONS=true`), where
- * that fails them.
+ * `1.0.0-rc.1`, whose version and SHA-256 are public and immutable; the `--update` case of a release without
+ * `okf wrapper` uses `1.0.0-alpha.1`, likewise published. GitHub tokens are removed from every child. The `--update`
+ * and `--verify` cases also use the real `gh`, which must be 2.102.0 or later (the launcher's floor): where the `gh` on
+ * the PATH is missing or older, they are skipped, except on GitHub Actions (`GITHUB_ACTIONS=true`), where that fails
+ * them. The full `--update` case also needs the real `git` on the PATH (the jar's `okf wrapper` runs it).
  */
 @Tag("network")
 class LauncherNetworkTest {
@@ -34,6 +36,9 @@ class LauncherNetworkTest {
             "GH_HOST" to null,
         )
     }
+
+    /** An empty global git configuration (the system one is off): git's isolation in [git] and [okfwWithGit]. */
+    private val globalConfig by lazy { tmp.resolve("gitconfig").apply { writeText("") } }
 
     @Test
     fun `an empty cache downloads the pinned release, which then runs offline`() {
@@ -63,23 +68,64 @@ class LauncherNetworkTest {
         assertEquals("okfw: okf-cli $VERSION verified (built by .github/workflows/release.yml on refs/heads/main)\n", run.out)
     }
 
-    /** alpha.1 has no `okf wrapper`: the pin is written, then the launcher reports that the launcher files were not. */
+    /**
+     * The whole `--update` in a git work tree with the real `git`: the pin is written, then the release's `okf wrapper`
+     * writes its launcher files (the box holds this commit's, so each is unchanged or updated) and `.gitattributes`.
+     * After a commit, a second `--update` of the same release finds it pinned and leaves the work tree clean.
+     */
     @Test
-    fun `okfw --update writes the pin of the release, then exits 3 because that release has no okf wrapper`() {
+    fun `okfw --update pins the release and writes its launcher files, and a second run changes nothing`() {
         realGh()
         box.launcher()
-        val git = Host.run(listOf("git", "init", "-q"), box.repo, emptyMap())
-        assertEquals(0, git.code, git.toString())
+        val path = realGit()
         box.toolbox(LauncherSandbox.BASE_TOOLS + Host.shaTool + "curl" + "gh")
-        val run = box.okfw("--update", VERSION, env = env).lf()
-        assertEquals(3, run.code, run.toString())
-        assertEquals("okfw: pinned okf-cli $VERSION (sha256 $SHA256)\n", run.out)
+
+        val first = okfwWithGit(path, "--update", VERSION).lf()
+        assertEquals(0, first.code, first.toString())
         assertTrue(
-            Regex("okfw: okf-cli ${Regex.escape(VERSION)} is pinned, but its launcher files could not be written \\(okf wrapper exited [0-9]+\\)\n")
+            Regex(
+                "okfw: pinned okf-cli ${Regex.escape(VERSION)} \\(sha256 $SHA256\\)\n" +
+                    "\\[(unchanged|updated)] okfw\n\\[(unchanged|updated)] okfw\\.cmd\n" +
+                    "\\[kept] ${Regex.escape(Launcher.PIN)}\n\\[created] ${Regex.escape(Launcher.ATTRIBUTES)}\n" +
+                    "${Regex.escape(Launcher.CHMOD_NOTICE)}\nokf wrapper OK: [0-9]+ file\\(s\\) written\\.\n",
+            ).matches(first.out),
+            first.out,
+        )
+        assertArrayEquals(Launcher.pin(VERSION, SHA256), box.repo.resolve(Launcher.PIN).readBytes())
+
+        git("add", "-A")
+        git("commit", "-q", "-m", "pin")
+        val second = okfwWithGit(path, "--update", VERSION).lf()
+        assertEquals(0, second.code, second.toString())
+        assertEquals(
+            "okfw: okf-cli $VERSION is already pinned\n[unchanged] okfw\n[unchanged] okfw.cmd\n[kept] ${Launcher.PIN}\n" +
+                "${Launcher.CHMOD_NOTICE}\nokf wrapper OK: 0 file(s) written.\n",
+            second.out,
+        )
+        assertArrayEquals(Launcher.pin(VERSION, SHA256), box.repo.resolve(Launcher.PIN).readBytes())
+        assertEquals("", git("status", "--porcelain"))
+    }
+
+    /**
+     * `1.0.0-alpha.1` has no `okf wrapper`: the pin is written, then the launcher reports that the launcher files were
+     * not. The only check of that message against a published release.
+     */
+    @Test
+    fun `okfw --update of a release without okf wrapper writes the pin, then exits 3`() {
+        realGh()
+        box.launcher()
+        val init = Host.run(listOf("git", "init", "-q"), box.repo, emptyMap())
+        assertEquals(0, init.code, init.toString())
+        box.toolbox(LauncherSandbox.BASE_TOOLS + Host.shaTool + "curl" + "gh")
+        val run = box.okfw("--update", ALPHA_VERSION, env = env).lf()
+        assertEquals(3, run.code, run.toString())
+        assertEquals("okfw: pinned okf-cli $ALPHA_VERSION (sha256 $ALPHA_SHA256)\n", run.out)
+        assertTrue(
+            Regex("okfw: okf-cli ${Regex.escape(ALPHA_VERSION)} is pinned, but its launcher files could not be written \\(okf wrapper exited [0-9]+\\)\n")
                 .containsMatchIn(run.err),
             run.err,
         )
-        assertArrayEquals(Launcher.pin(VERSION, SHA256), box.repo.resolve(Launcher.PIN).readBytes())
+        assertArrayEquals(Launcher.pin(ALPHA_VERSION, ALPHA_SHA256), box.repo.resolve(Launcher.PIN).readBytes())
     }
 
     @Test
@@ -136,8 +182,54 @@ class LauncherNetworkTest {
         assume(atFloor, "${run.out.lineSequence().first()} is below the launcher's floor 2.102.0")
     }
 
+    // --- git, as in LauncherJarTest ---
+
+    /**
+     * Makes the repo a git work tree with an isolated commit identity and returns the `PATH` of [okfwWithGit]: the stub
+     * directory and the toolbox, plus `git` for the jar's own git calls (a link in the stub directory on POSIX, the
+     * directory of `git.exe` on Windows).
+     */
+    private fun realGit(): List<File> {
+        val gitPath = if (WINDOWS) {
+            listOf(checkNotNull(onPath("git.exe")) { "git.exe on the PATH" }.parentFile)
+        } else {
+            Files.createSymbolicLink(box.stub.resolve("git").toPath(), checkNotNull(onPath("git")) { "git on the PATH" }.toPath())
+            emptyList()
+        }
+        git("init", "-q", "-b", "main")
+        return listOf(box.stub, box.toolbox) + gitPath
+    }
+
+    /** `sh ./okfw [args]` in the repo, after the PATH guard, with [path] as the `PATH` and git's isolation. */
+    private fun okfwWithGit(path: List<File>, vararg args: String): Run {
+        val environment = box.environment(path = path, env = env + mapOf("GIT_CONFIG_GLOBAL" to globalConfig.path, "GIT_CONFIG_NOSYSTEM" to "1"))
+        box.guard(environment)
+        return Host.run(listOf(Host.sh.path, "./okfw") + args, box.repo, environment)
+    }
+
+    private fun git(vararg args: String): String {
+        val run = Host.run(
+            listOf("git") + args,
+            box.repo,
+            mapOf("GIT_CONFIG_GLOBAL" to globalConfig.path, "GIT_CONFIG_NOSYSTEM" to "1"),
+        )
+        check(run.code == 0) { "git ${args.joinToString(" ")}: $run" }
+        if (args.first() == "init") {
+            listOf("user.name" to "t", "user.email" to "t@t", "commit.gpgsign" to "false", "core.autocrlf" to "false")
+                .forEach { (key, value) -> git("config", key, value) }
+        }
+        return run.out.trim()
+    }
+
+    private fun onPath(name: String): File? =
+        System.getenv("PATH").orEmpty().split(File.pathSeparator).filter { it.isNotEmpty() }.map { File(it, name) }.firstOrNull { it.isFile }
+
     private companion object {
-        const val VERSION = "1.0.0-alpha.1"
-        const val SHA256 = "cadfdb7cb0d55e1b615e2662cca6cd48c554463f8c3e212753ceafea0303503b"
+        const val VERSION = "1.0.0-rc.1"
+        const val SHA256 = "5ce703dada54b6a802ce2309ffc13aa8cffb456e7f4d27dbe20be0b7848d6983"
+
+        /** A published release without `okf wrapper`. */
+        const val ALPHA_VERSION = "1.0.0-alpha.1"
+        const val ALPHA_SHA256 = "cadfdb7cb0d55e1b615e2662cca6cd48c554463f8c3e212753ceafea0303503b"
     }
 }
