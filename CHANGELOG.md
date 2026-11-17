@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.0 — 2026-11-17
+
+First stable release: from this version on, the compatibility contract applies (`docs/reference.md`,
+"Compatibility"). Same code as `1.0.0-rc.1`; the changes since `1.0.0-alpha.1` and the upgrade notes are listed
+under 1.0.0-rc.1.
+
 ## 1.0.0-rc.1 — 2026-11-17
 
 Release candidate of 1.0.0. Pre-releases are exempt from the compatibility contract; 1.0.0 will be under it.
