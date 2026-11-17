@@ -10,13 +10,17 @@ updates:
       day: monday
     open-pull-requests-limit: 5
 
-  # GitHub Actions used in .github/workflows/*.yml, all in one pull request.
+  # GitHub Actions used in .github/workflows/*.yml, all in one pull request. This repository's own actions, which the
+  # e2e workflow runs as a consumer references them, are moved by hand after a release.
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
       day: monday
     open-pull-requests-limit: 5
+    ignore:
+      - dependency-name: "sharpbitstudio/okf-cli"
+      - dependency-name: "sharpbitstudio/okf-cli/*"
     groups:
       github-actions:
         patterns: ["*"]
