@@ -50,10 +50,11 @@ major version (see [Compatibility](docs/reference.md#compatibility)).
 
 ## Status
 
-Release candidate. Releases are on the [releases page](https://github.com/sharpbitstudio/okf-cli/releases); the
-latest is `1.0.0-rc.1`, a pre-release of 1.0.0 (pre-releases are exempt from the compatibility contract, which
-applies from 1.0.0). Running the tool needs Java 17 or later and `git` on the `PATH`; building it from source needs
-JDK 17 or later (CI builds on JDK 25) and runs through the Gradle wrapper.
+Stable: `1.0.0` is the first release under the compatibility contract
+([`docs/reference.md`](docs/reference.md#compatibility)). Releases are on the
+[releases page](https://github.com/sharpbitstudio/okf-cli/releases). Running the tool needs Java 17 or later and
+`git` on the `PATH`; building it from source needs JDK 17 or later (CI builds on JDK 25) and runs through the Gradle
+wrapper.
 
 Upgrading from `1.0.0-alpha.1`: [`CHANGELOG.md`](CHANGELOG.md) lists what changed (defaults, new keys, console
 lines) and how to keep the old output.
@@ -63,10 +64,10 @@ lines) and how to keep the old output.
 In the root of the git work tree whose docs you want to check, download the self-contained jar and its checksum
 into a directory outside the work tree (here `$HOME/okf-cli`), then start a bundle with `okf init` and check it
 through the launcher. Each step runs only if the one before it passed, so nothing runs the jar unless the download
-and the checksum passed (`version` prints `okf-cli 1.0.0-rc.1`):
+and the checksum passed (`version` prints `okf-cli 1.0.0`):
 
 ```bash
-VERSION=1.0.0-rc.1
+VERSION=1.0.0
 BASE="https://github.com/sharpbitstudio/okf-cli/releases/download/v$VERSION"
 DL="$HOME/okf-cli"
 JAR="$DL/okf-cli-$VERSION-all.jar"
