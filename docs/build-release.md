@@ -15,9 +15,9 @@ java -jar build/libs/okf-cli-<version>-all.jar version
 ./gradlew networkTest                            # the tests that download a published release (not in build)
 ```
 
-The version comes from `gradle.properties` (`1.0.0-SNAPSHOT` between releases); the release workflow passes
-`-Pversion=<version>` with the version it was started with. `okf version` prints it from
-`com/sharpbitstudio/okf/version.properties`, which is expanded at build time.
+The version comes from `gradle.properties` (the next version with `-SNAPSHOT` between releases, see
+[Release](#release)); the release workflow passes `-Pversion=<version>` with the version it was started with.
+`okf version` prints it from `com/sharpbitstudio/okf/version.properties`, which is expanded at build time.
 
 `build` produces three jars under `build/libs/`:
 
@@ -156,6 +156,12 @@ prepares a draft, and a maintainer publishes it:
    with the version, without the `v`.
 3. The maintainer reviews the draft (its three assets, the jar's SHA-256 against the run summary, the target
    commit) and publishes it. Publishing creates the tag `v<version>` at the built commit.
+
+After a release without a pre-release part is published, a branch of this repo moves `version` in
+`gradle.properties` to the next version with `-SNAPSHOT`, like the move of the `e2e` workflow's two consumer steps to
+that release's commit (see [Dependency updates](#dependency-updates)); from its merge on, a local build from `main`
+sorts after that release. A pre-release leaves `version` as it is (a `-SNAPSHOT` version sorts before every
+pre-release of the same version).
 
 The workflow has read-only permissions, except for its second job:
 
