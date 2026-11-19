@@ -1304,7 +1304,7 @@ class LauncherTest {
         val psArgs = args.joinToString(" ") { "'$it'" }
         dir.resolve("caller.cmd").writeText("@echo off\r\ncall okfw.cmd $cmdArgs\r\nexit /b %errorlevel%\r\n")
         val powershell = File(System.getenv("SystemRoot") ?: "C:\\Windows", "System32\\WindowsPowerShell\\v1.0\\powershell.exe")
-        val pwsh = System.getenv("PATH").orEmpty().split(File.pathSeparator).map { File(it, "pwsh.exe") }.firstOrNull { it.isFile }
+        val pwsh = Host.onPath("pwsh.exe")
         return buildList {
             add("cmd /c" to Host.run(listOf(cmd(), "/d", "/c", "okfw.cmd $cmdArgs"), dir, env))
             add("call" to Host.run(listOf(cmd(), "/d", "/c", "caller.cmd"), dir, env))

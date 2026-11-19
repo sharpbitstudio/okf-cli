@@ -9,7 +9,6 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.io.File
-import java.nio.file.Files
 
 /**
  * This build's `all` jar (`okf.allJar`, passed by the build) end to end with the launcher it embeds and a real Java (the
@@ -22,25 +21,18 @@ class LauncherJarTest {
     lateinit var tmp: File
 
     private lateinit var box: LauncherSandbox
-    private lateinit var globalConfig: File
     private val allJar = File(checkNotNull(System.getProperty("okf.allJar")) { "the build passes okf.allJar" })
     private val javaHome = File(System.getProperty("java.home"))
 
-    /** `git` for the jar's own git calls: a toolbox entry on POSIX, the directory of `git.exe` on Windows. */
-    private lateinit var gitPath: List<File>
+    /** The real git in the repo, also for the jar's own git calls (a link in the stub directory on POSIX). */
+    private lateinit var git: SandboxGit
 
     @BeforeEach
     fun setUp() {
         box = LauncherSandbox(tmp)
         box.curl(serve = null)
-        globalConfig = tmp.resolve("gitconfig").apply { writeText("") }
-        gitPath = if (WINDOWS) {
-            listOf(checkNotNull(onPath("git.exe")) { "git.exe on the PATH" }.parentFile)
-        } else {
-            Files.createSymbolicLink(box.stub.resolve("git").toPath(), checkNotNull(onPath("git")) { "git on the PATH" }.toPath())
-            emptyList()
-        }
-        git("init", "-q", "-b", "main")
+        git = SandboxGit(box)
+        git.init()
     }
 
     @Test
@@ -158,13 +150,13 @@ class LauncherJarTest {
             if (WINDOWS) {
                 // The shim must take sh.exe from the PATH: Git's bin/sh.exe would put Git's own curl before the stub.
                 box.stub.resolve("git.cmd").writeText("@echo off\r\necho not-an-exec-path\r\n")
-                val env = box.environment(path = listOf(box.stub, box.toolbox, Host.usrBin) + gitPath, env = env() + ("NoDefaultCurrentDirectoryInExePath" to null))
+                val env = box.environment(path = listOf(box.stub, box.toolbox, Host.usrBin) + git.path, env = env() + ("NoDefaultCurrentDirectoryInExePath" to null))
                 val cmd = System.getenv("ComSpec") ?: "cmd.exe"
                 val powershell = File(System.getenv("SystemRoot") ?: "C:\\Windows", "System32\\WindowsPowerShell\\v1.0\\powershell.exe")
                 add("cmd /c" to { box.guard(env); Host.run(listOf(cmd, "/d", "/c", "okfw.cmd --update $version"), box.repo, env) })
                 val ps = { exe: String -> Host.run(listOf(exe, "-NoProfile", "-NonInteractive", "-Command", "./okfw --update '$version'; exit \$LASTEXITCODE"), box.repo, env) }
                 add("powershell" to { ps(powershell.path) })
-                onPath("pwsh.exe")?.let { pwsh -> add("pwsh" to { ps(pwsh.path) }) }
+                Host.onPath("pwsh.exe")?.let { pwsh -> add("pwsh" to { ps(pwsh.path) }) }
             }
         }
         for ((name, run) in runs) {
@@ -219,12 +211,7 @@ class LauncherJarTest {
     private fun launcherBytes(name: String) = Launcher.files.single { it.name == name }.bytes
 
     /** The child environment of every run: the sandbox's, plus git's isolation and `JAVA_HOME` = the test JVM. */
-    private fun env(): Map<String, String?> =
-        mapOf(
-            "JAVA_HOME" to with(box) { javaHome.shell },
-            "GIT_CONFIG_GLOBAL" to globalConfig.path,
-            "GIT_CONFIG_NOSYSTEM" to "1",
-        )
+    private fun env(): Map<String, String?> = mapOf("JAVA_HOME" to with(box) { javaHome.shell }) + git.env
 
     /** `java -jar <all jar> [args]` in the repo. */
     private fun jar(vararg args: String): Run =
@@ -244,22 +231,5 @@ class LauncherJarTest {
             box.environment(path = sandboxPath(), env = env() + ("NoDefaultCurrentDirectoryInExePath" to null)),
         )
 
-    private fun sandboxPath() = listOf(box.stub, box.toolbox) + gitPath
-
-    private fun git(vararg args: String): String {
-        val run = Host.run(
-            listOf("git") + args,
-            box.repo,
-            mapOf("GIT_CONFIG_GLOBAL" to globalConfig.path, "GIT_CONFIG_NOSYSTEM" to "1"),
-        )
-        check(run.code == 0) { "git ${args.joinToString(" ")}: $run" }
-        if (args.first() == "init") {
-            listOf("user.name" to "t", "user.email" to "t@t", "commit.gpgsign" to "false", "core.autocrlf" to "false")
-                .forEach { (key, value) -> git("config", key, value) }
-        }
-        return run.out.trim()
-    }
-
-    private fun onPath(name: String): File? =
-        System.getenv("PATH").orEmpty().split(File.pathSeparator).filter { it.isNotEmpty() }.map { File(it, name) }.firstOrNull { it.isFile }
+    private fun sandboxPath() = listOf(box.stub, box.toolbox) + git.path
 }
