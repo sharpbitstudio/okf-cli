@@ -290,10 +290,11 @@ launcher deletes it and tries to download. The layout of the cache is not part o
 - In Git Bash: `./okfw <arguments>`, as on Linux and macOS.
 - In PowerShell: `./okfw <arguments>` runs `okfw.cmd` (PowerShell looks for `okfw` with the extensions of
   `PATHEXT`). In `cmd`: `okfw <arguments>`.
-- `okfw.cmd` finds `sh.exe` from `git --exec-path` (`<git>/<prefix>/libexec/git-core`, e.g. `mingw64` or `ucrt64`
-  → `<git>/bin/sh.exe`), else `sh.exe` on the `PATH`, and passes the exit code on. `cmd` looks for `git` in the
-  current directory before the `PATH`, so run `okfw.cmd` from the repository it belongs to, not from a directory
-  someone else controls.
+- `okfw.cmd` finds `sh.exe` from `git --exec-path` (`<git>/<prefix>/libexec/git-core` → `<git>/bin/sh.exe`;
+  `<prefix>` is e.g. `mingw64` or `ucrt64`) when that path starts with a drive (`X:`) or a UNC prefix (`\\`, `//`)
+  and that `sh.exe` exists, else it takes `sh.exe` on the `PATH`; it passes the exit code on. `cmd` looks for `git`
+  in the current directory before the `PATH`, so run `okfw.cmd` from the repository it belongs to, not from a
+  directory someone else controls.
 - Arguments pass through `cmd`, which cannot carry a double quote inside an argument; and the shell of Git for
   Windows expands `*` and `?` and removes single quotes in arguments it receives from Windows programs. okf-cli's
   options need none of these. PowerShell drops an empty argument before `okfw.cmd` sees it: write `--base=` (one
