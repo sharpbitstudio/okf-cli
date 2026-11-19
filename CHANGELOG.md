@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+- xcheck action: the token goes only to the server the workflow runs on (`GITHUB_SERVER_URL`: its scheme, host and
+  port), for repository requests. git now gets it from a credential helper scoped to that URL,
+  `xcheck/credential.sh`, instead of an askpass helper that answered every username and password prompt. A clone
+  that the server redirects to another host, or that the runner's git configuration rewrites to another host
+  (`url.<base>.insteadOf`, e.g. a mirror), no longer receives the token; if that host requires credentials, the
+  clone fails with exit `2` and the `cannot clone …` annotation, after git's own message. A clone through a proxy
+  whose configured URL names a user but no password now always fails that way, even when the proxy does not enforce
+  authentication: git asks for the proxy's password before the first request, and nothing answers. A proxy URL with
+  a password (`http://<user>:<password>@<host>:<port>`) carries its own credential and works as before. Satellites
+  from a mirror or behind such a proxy: check them out into `<workspace>/<repo>` before the action. The clone's log
+  line now reads
+  `okf-cli xcheck action: git -c credential.helper= -c core.askPass= -c credential.useHttpPath=true -c 'credential.<server>.helper=!sh "$GITHUB_ACTION_PATH/credential.sh"' clone --no-tags -- <url> <directory>`.
+
 ## 1.0.0 — 2026-11-17
 
 First stable release: from this version on, the compatibility contract applies (`docs/reference.md`,

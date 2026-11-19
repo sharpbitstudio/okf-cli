@@ -9,10 +9,15 @@
 # workspace when the input is empty), OKF_REPORT (the report file), OKFW_CACHE_DIR, GITHUB_ACTION_PATH,
 # GITHUB_SERVER_URL, GITHUB_OUTPUT and GITHUB_STEP_SUMMARY.
 #
-# The token: read once, removed from the environment, and given only to each `git clone`, through GIT_ASKPASS
-# (xcheck/askpass.sh) and a variable set for that command alone; never in a URL, an argument or git's configuration.
-# Every clone runs with the credential helpers reset (`-c credential.helper=`), so none receives the credential, and
-# without prompts.
+# The token: read once, removed from the environment, and given only to each `git clone`, through a credential helper
+# (xcheck/credential.sh) scoped to the server's URL (GITHUB_SERVER_URL as the runner sets it) and a variable set for
+# that command alone; never in a URL, an argument or git's configuration. git consults the helper only for the
+# server's scheme, host and port (for a proxy's credential request too), and the helper answers only requests for a
+# repository path, so a redirect to another host, a URL rewritten to another host or a proxy anywhere else never gets
+# the token. For a proxy at the server's own origin, git 2.47 and later pass no path (they reject a path in an http or
+# https proxy URL); an older git passes the path of such a proxy URL, and the token goes to that origin, which gets it
+# anyway. Every other credential helper is reset (`-c credential.helper=`), askpass is off (GIT_ASKPASS empty, and
+# `-c core.askPass=` where an empty variable is dropped on its way to git) and so are prompts.
 #
 # Exit code: 2 for an invalid input (an empty hub, a hub or workspace with a control character, a satellite name that
 # is not owner/repo or repo) or a failed clone, with one error annotation; else the code of `okfw xcheck`. Every name
@@ -51,6 +56,9 @@ main() {
   done
 
   okf_server=${GITHUB_SERVER_URL:-https://github.com}
+  # git's shell expands $GITHUB_ACTION_PATH when it runs the helper.
+  # shellcheck disable=SC2016
+  okf_credential='!sh "$GITHUB_ACTION_PATH/credential.sh"'
   for okf_entry in "$@"; do
     okf_split "$okf_entry"
     okf_dir=$okf_workspace/$okf_repo
@@ -59,10 +67,12 @@ main() {
       continue
     fi
     okf_url=$okf_server/$okf_owner/$okf_repo.git
-    okf_say "git -c credential.helper= clone --no-tags -- $okf_url $okf_dir"
+    okf_helper="credential.$okf_server.helper=$okf_credential"
+    okf_say "git -c credential.helper= -c core.askPass= -c credential.useHttpPath=true -c '$okf_helper' clone --no-tags -- $okf_url $okf_dir"
     okf_status=0
-    OKF_XCHECK_TOKEN=$okf_token GIT_ASKPASS=$GITHUB_ACTION_PATH/askpass.sh GIT_TERMINAL_PROMPT=0 GCM_INTERACTIVE=never \
-      GIT_LFS_SKIP_SMUDGE=1 git -c credential.helper= clone --no-tags -- "$okf_url" "$okf_dir" || okf_status=$?
+    OKF_XCHECK_TOKEN=$okf_token GIT_ASKPASS='' GIT_TERMINAL_PROMPT=0 GCM_INTERACTIVE=never GIT_LFS_SKIP_SMUDGE=1 \
+      git -c credential.helper= -c core.askPass= -c credential.useHttpPath=true -c "$okf_helper" \
+      clone --no-tags -- "$okf_url" "$okf_dir" || okf_status=$?
     if [ "$okf_status" -ne 0 ]; then
       okf_error "cannot clone $okf_owner/$okf_repo: git clone exited with $okf_status"
     fi

@@ -240,13 +240,24 @@ earlier run in the same job is removed when the action starts.
 
 ### Token and permissions
 
-- git uses the token only when a server asks for credentials. It gets it through an askpass helper,
-  [`xcheck/askpass.sh`](../xcheck/askpass.sh), as the password of the user `x-access-token`, from a variable set for
-  each `git clone` alone. The token never appears in a URL, a command line or a git configuration, and it is not
-  passed on to the launcher or okf-cli.
-- Every clone runs with git's credential helpers switched off (`-c credential.helper=`) and without prompts
-  (`GIT_TERMINAL_PROMPT=0`, `GCM_INTERACTIVE=never`), so no credential is stored, and a missing or rejected token
-  fails the clone instead of waiting for input. Git LFS content is not downloaded (`GIT_LFS_SKIP_SMUDGE=1`).
+- git uses the token only when the server the workflow runs on (`GITHUB_SERVER_URL`: its scheme, host and port, as
+  git matches `credential.<url>` settings) asks for credentials for a repository. It gets it from the credential
+  helper [`xcheck/credential.sh`](../xcheck/credential.sh), as the password of the user `x-access-token`, from a
+  variable set for each `git clone` alone. The token never appears in a URL, a command line or a git configuration
+  file, and it is not passed on to the launcher or okf-cli. Programs that the runner's own configuration starts during
+  a clone — hooks (e.g. through `core.hooksPath`), and for a URL rewritten to SSH the SSH command and its askpass
+  program — inherit that variable; they run as the same user as everything else in the job.
+- A request for credentials from anywhere else — a host the server redirects to, a host the git configuration
+  rewrites the URL to (`url.<base>.insteadOf`, e.g. a mirror), a proxy — gets no answer; the clone fails if that host
+  requires credentials. With a proxy whose configured URL names a user but no password, git asks for the proxy's
+  password before the first request, so the clone always fails, even when the proxy does not enforce authentication;
+  a password in the proxy's URL carries its own credential and avoids that request. Satellites that come from a
+  mirror or through such a proxy are checked out into `<workspace>/<repo>` before the action (e.g. with
+  `actions/checkout` and its `path`).
+- Every other credential helper is switched off (`-c credential.helper=`), and so are askpass programs
+  (`GIT_ASKPASS` empty and `-c core.askPass=`) and prompts (`GIT_TERMINAL_PROMPT=0`, `GCM_INTERACTIVE=never`), so no
+  credential is stored, and a missing or rejected token fails the clone instead of waiting for input. Git LFS content
+  is not downloaded (`GIT_LFS_SKIP_SMUDGE=1`).
 - The default, the workflow's `github.token`, can read the repository the workflow runs in, and public repositories
   need no token. For private satellites, pass a secret holding a token with read access to their contents, such as
   a fine-grained personal access token or a GitHub App installation token with the `Contents: read` permission.
@@ -270,7 +281,8 @@ The step fails when the action exits with a code other than `0`:
   - a satellite entry that is not a name or `owner/name`
     (`input 'satellites': entry <n> is not owner/repo or repo (each name only letters, digits, '.', '_' and '-', and not '.' or '..')`;
     entries are counted from 1 and not repeated in the log);
-  - a failed clone, after git's own message (`cannot clone <owner>/<repo>: git clone exited with <code>`); the
+  - a failed clone, after git's own message (`cannot clone <owner>/<repo>: git clone exited with <code>`), for
+    example one whose credentials another host (after a redirect, or a URL rewritten to it) or a proxy asks for; the
     satellites cloned before it stay in the workspace;
   - outside GitHub Actions only, no workspace at all (`input 'workspace' must not be empty`).
 - otherwise the exit code of `okf xcheck` ([reference.md](reference.md#cli)): `0` when the federation is clean or
@@ -278,7 +290,7 @@ The step fails when the action exits with a code other than `0`:
   launcher's `2` and `3` ([launcher.md](launcher.md#exit-codes-and-messages)).
 
 Before each clone, and before `okf xcheck`, the action writes one line to standard error:
-`okf-cli xcheck action: git -c credential.helper= clone --no-tags -- <url> <directory>`,
+`okf-cli xcheck action: git -c credential.helper= -c core.askPass= -c credential.useHttpPath=true -c 'credential.<server>.helper=!sh "$GITHUB_ACTION_PATH/credential.sh"' clone --no-tags -- <url> <directory>`,
 `okf-cli xcheck action: <directory> exists, not cloned`, or
 `okf-cli xcheck action: okf xcheck --repo=<hub> --workspace=<workspace> --report=<file>`. The output of git, the
 launcher and the jar is passed on unchanged.

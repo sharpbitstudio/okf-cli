@@ -47,9 +47,12 @@ script may use (`curl`, `gh` and `java` stubs for `--update` and `--verify`). Th
 the same `sh`: the selection table with an empty `PATH`, and `action/check.sh` against a stub launcher, with only
 `sh`, `grep`, `tr` and `git` on the `PATH`. The xcheck action's tests run `xcheck/xcheck.sh` with the committed
 launcher and this build's jar from a seeded cache, against satellites published as bare repositories: over `file://`,
-and for the token over dumb HTTP with Basic auth from a local `com.sun.net.httpserver` server, with a credential
-helper in the git configuration that must never be called. A `git` wrapper first on the `PATH` logs every git
-command line.
+and for the token over dumb HTTP with Basic auth from a local `com.sun.net.httpserver` server. For the token they
+also run a second local server (a cross-origin redirect before and after authentication and an `insteadOf` rewrite
+point at it) and a recording proxy, neither of which may receive the token, and `git credential fill` with the
+action's own arguments against a list of URLs; sentinels (a global credential helper, a global URL-scoped one,
+`core.askPass`, `SSH_ASKPASS`, and a credential helper and `core.askPass` set through `GIT_CONFIG_COUNT`) must never
+be called. A `git` wrapper first on the `PATH` logs every git command line.
 `networkTest` runs only the `network` tests: `okfw` downloads the published `1.0.0` with real `curl` and runs it, and
 `okfw --verify` / `okfw --update` check its build provenance with the real `gh`. `okfw --update 1.0.0` runs in a git
 work tree with the real `git`: it writes the pin, the release's `okf wrapper` writes the launcher files, and after a
