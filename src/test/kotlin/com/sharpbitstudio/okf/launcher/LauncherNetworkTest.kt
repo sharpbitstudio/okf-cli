@@ -52,7 +52,7 @@ class LauncherNetworkTest {
 
         box.toolbox(LauncherSandbox.BASE_TOOLS + Host.shaTool + "curl")
         val first = box.okfw("version", env = env).lf()
-        assertEquals(Run(0, "okf-cli $VERSION\n", "okfw: downloading okf-cli $VERSION\n"), first)
+        assertEquals(Run(0, "okf-cli $VERSION\n", "okfw: downloading okf-cli $VERSION\n"), first) { "curl: ${Host.tool("curl")}" }
         assertEquals(SHA256, LauncherSandbox.sha256(box.cachedJar(VERSION).readBytes()))
 
         // Offline: curl now fails if called, and is not called.
