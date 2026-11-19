@@ -4,7 +4,7 @@
 #
 # It uses no other action: the caller checks out the hub (with fetch-depth: 0) and provides Java 17 or later. Every
 # input reaches the script through `env:`, never inside `run:`; the logic is in xcheck/xcheck.sh, and the token reaches
-# git only through xcheck/askpass.sh.
+# git only through xcheck/credential.sh, a credential helper scoped to the server's URL.
 name: okf-cli xcheck
 description: Clone an OKF hub's satellites and run okf xcheck with the okf-cli version the hub pins.
 author: SharpBit Studio
