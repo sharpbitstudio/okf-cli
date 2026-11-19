@@ -40,7 +40,16 @@ internal object Host {
      * [shimSh] installation, which runs with exactly the PATH it is given (no Git directories in front of the stubs).
      */
     val sh: File by lazy {
-        if (WINDOWS) shimSh.parentFile.parentFile.resolve("usr/bin/sh.exe").also { check(it.isFile) { "$it not found" } } else File("/bin/sh")
+        if (WINDOWS) {
+            shimSh.parentFile.parentFile.resolve("usr/bin/sh.exe").also {
+                check(it.isFile) {
+                    "$it not found: the launcher tests need Git for Windows' bin/sh.exe " +
+                        "(from git --exec-path, else from the PATH; found $shimSh)"
+                }
+            }
+        } else {
+            File("/bin/sh")
+        }
     }
 
     /** Git for Windows' `usr/bin` (holds `sh.exe`, the coreutils, `sha256sum`; no `curl`, `gh`, `java` or `shasum`). */
@@ -64,10 +73,11 @@ internal object Host {
     }
 
     /**
-     * Git for Windows' own curl, which okfw.cmd users get through Git's sh.exe: `<git>/<prefix>/bin/curl.exe` for
-     * [gitPrefix], else for the first of [MSYSTEM_PREFIXES] that has one, else Windows' own `System32\curl.exe`.
+     * The curl an `okfw.cmd` user gets: Git for Windows' own, which Git's sh.exe puts first on the PATH
+     * (`<git>/<prefix>/bin/curl.exe` for [gitPrefix], else for the first of [MSYSTEM_PREFIXES] that has one); when this
+     * installation has none, Windows' own `System32\curl.exe`.
      */
-    private val gitCurl: File by lazy {
+    private val windowsCurl: File by lazy {
         (listOfNotNull(gitPrefix) + MSYSTEM_PREFIXES).map { gitRoot.resolve("$it/bin/curl.exe") }.firstOrNull { it.isFile }
             ?: File(System.getenv("SystemRoot") ?: "C:\\Windows", "System32\\curl.exe")
     }
@@ -86,7 +96,7 @@ internal object Host {
                 "shasum" -> usrBin.resolve("core_perl/shasum")
                 // The GitHub CLI is installed on its own, not with Git.
                 "gh" -> return onPath("gh.exe")
-                "curl" -> gitCurl
+                "curl" -> windowsCurl
                 else -> usrBin.resolve("$name.exe")
             }.takeIf { it.isFile }
         } else {

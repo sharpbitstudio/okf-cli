@@ -1209,16 +1209,17 @@ class LauncherTest {
         )
         val env = LauncherSandbox.CLEARED.filter { it != "PATH" }.associateWith<String, String?> { null } +
             ("NoDefaultCurrentDirectoryInExePath" to null)
-        // Git's bin/sh.exe puts its installation's `/<prefix>/bin` first (only a known prefix when that is unknown).
-        val gitPath = Host.gitPrefix?.let { Regex.escape("PATH=/$it/bin:/usr/bin:") }
-            ?: Host.MSYSTEM_PREFIXES.joinToString("|", "PATH=/(", ")/bin:/usr/bin:")
+        // Git's bin/sh.exe puts its installation's `/<prefix>/bin` first; any known prefix when the installation's prefix
+        // cannot be derived.
+        val prefixes = Host.gitPrefix?.let { listOf(it) } ?: Host.MSYSTEM_PREFIXES
+        val gitPath = Regex(prefixes.joinToString("|", "PATH=/(", ")/bin:/usr/bin:") { Regex.escape(it) })
         for (code in 0..3) {
             val shells = shells(dir, "$code", "a b", "--base=")
             for ((name, run) in shells) {
                 assertEquals(code, run.code, "$name: $run")
                 assertEquals("[$code]\n[a b]\n[--base=]\n", run.lf().out, name)
                 assertTrue(run.err.contains("0=${dir.invariantSeparatorsPath}/okfw\n"), "$name: $run")
-                assertTrue(Regex(gitPath).containsMatchIn(run.err), "$name: Git's bin/sh.exe sets the PATH: $run")
+                assertTrue(gitPath.containsMatchIn(run.err), "$name: Git's bin/sh.exe sets the PATH (expected /${gitPath.pattern}/): $run")
             }
         }
         // cmd keeps an empty argument (PowerShell drops one before okfw.cmd sees it).
