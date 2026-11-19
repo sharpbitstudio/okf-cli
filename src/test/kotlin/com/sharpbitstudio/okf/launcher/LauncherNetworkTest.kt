@@ -10,7 +10,6 @@ import org.junit.jupiter.api.Tag
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.io.File
-import java.nio.file.Files
 
 /**
  * The launcher against a published release over the network (`./gradlew networkTest`, not part of `check`): real `sh`,
@@ -41,9 +40,6 @@ class LauncherNetworkTest {
             "GH_HOST" to null,
         )
     }
-
-    /** An empty global git configuration (the system one is off): git's isolation in [git] and [okfwWithGit]. */
-    private val globalConfig by lazy { tmp.resolve("gitconfig").apply { writeText("") } }
 
     @Test
     fun `an empty cache downloads the pinned release, which then runs offline`() {
@@ -82,10 +78,10 @@ class LauncherNetworkTest {
     fun `okfw --update pins the release and writes its launcher files, and a second run changes nothing`() {
         realGh()
         box.launcher()
-        val path = realGit()
+        val git = realGit()
         box.toolbox(LauncherSandbox.BASE_TOOLS + Host.shaTool + "curl" + "gh")
 
-        val first = okfwWithGit(path, "--update", VERSION).lf()
+        val first = okfwWithGit(git, "--update", VERSION).lf()
         assertEquals(0, first.code, first.toString())
         assertTrue(
             Regex(
@@ -100,7 +96,7 @@ class LauncherNetworkTest {
 
         git("add", "-A")
         git("commit", "-q", "-m", "pin")
-        val second = okfwWithGit(path, "--update", VERSION).lf()
+        val second = okfwWithGit(git, "--update", VERSION).lf()
         assertEquals(0, second.code, second.toString())
         assertEquals(
             "okfw: okf-cli $VERSION is already pinned\n[unchanged] okfw\n[unchanged] okfw.cmd\n[kept] ${Launcher.PIN}\n" +
@@ -123,16 +119,16 @@ class LauncherNetworkTest {
     fun `okfw --update from the previous release pins the new one and changes only the pin`() {
         realGh()
         box.launcher()
-        val path = realGit()
+        val git = realGit()
         box.toolbox(LauncherSandbox.BASE_TOOLS + Host.shaTool + "curl" + "gh")
 
-        val previous = okfwWithGit(path, "--update", PREVIOUS_VERSION).lf()
+        val previous = okfwWithGit(git, "--update", PREVIOUS_VERSION).lf()
         assertEquals(0, previous.code, previous.toString())
         assertArrayEquals(Launcher.pin(PREVIOUS_VERSION, PREVIOUS_SHA256), box.repo.resolve(Launcher.PIN).readBytes())
         git("add", "-A")
         git("commit", "-q", "-m", "pin the previous release")
 
-        val update = okfwWithGit(path, "--update", VERSION).lf()
+        val update = okfwWithGit(git, "--update", VERSION).lf()
         assertEquals(0, update.code, update.toString())
         assertTrue(
             Regex(
@@ -146,7 +142,7 @@ class LauncherNetworkTest {
         assertArrayEquals(Launcher.pin(VERSION, SHA256), box.repo.resolve(Launcher.PIN).readBytes())
         assertEquals("M ${Launcher.PIN}", git("status", "--porcelain"))
 
-        val version = okfwWithGit(path, "version").lf()
+        val version = okfwWithGit(git, "version").lf()
         assertEquals(Run(0, "okf-cli $VERSION\n", ""), version)
     }
 
@@ -158,8 +154,7 @@ class LauncherNetworkTest {
     fun `okfw --update of a release without okf wrapper writes the pin, then exits 3`() {
         realGh()
         box.launcher()
-        val init = Host.run(listOf("git", "init", "-q"), box.repo, emptyMap())
-        assertEquals(0, init.code, init.toString())
+        SandboxGit(box, onPath = false).init()
         box.toolbox(LauncherSandbox.BASE_TOOLS + Host.shaTool + "curl" + "gh")
         val run = box.okfw("--update", ALPHA_VERSION, env = env).lf()
         assertEquals(3, run.code, run.toString())
@@ -226,47 +221,17 @@ class LauncherNetworkTest {
         assume(atFloor, "${run.out.lineSequence().first()} is below the launcher's floor 2.102.0")
     }
 
-    // --- git, as in LauncherJarTest ---
+    // --- git ---
 
-    /**
-     * Makes the repo a git work tree with an isolated commit identity and returns the `PATH` of [okfwWithGit]: the stub
-     * directory and the toolbox, plus `git` for the jar's own git calls (a link in the stub directory on POSIX, the
-     * directory of `git.exe` on Windows).
-     */
-    private fun realGit(): List<File> {
-        val gitPath = if (WINDOWS) {
-            listOf(checkNotNull(onPath("git.exe")) { "git.exe on the PATH" }.parentFile)
-        } else {
-            Files.createSymbolicLink(box.stub.resolve("git").toPath(), checkNotNull(onPath("git")) { "git on the PATH" }.toPath())
-            emptyList()
-        }
-        git("init", "-q", "-b", "main")
-        return listOf(box.stub, box.toolbox) + gitPath
-    }
+    /** The real git in the repo (a work tree on `main` with an isolated commit identity), for [okfwWithGit]. */
+    private fun realGit(): SandboxGit = SandboxGit(box).also { it.init() }
 
-    /** `sh ./okfw [args]` in the repo, after the PATH guard, with [path] as the `PATH` and git's isolation. */
-    private fun okfwWithGit(path: List<File>, vararg args: String): Run {
-        val environment = box.environment(path = path, env = env + mapOf("GIT_CONFIG_GLOBAL" to globalConfig.path, "GIT_CONFIG_NOSYSTEM" to "1"))
+    /** `sh ./okfw [args]` in the repo, after the PATH guard: the sandbox's `PATH` plus [git]'s, and git's isolation. */
+    private fun okfwWithGit(git: SandboxGit, vararg args: String): Run {
+        val environment = box.environment(path = listOf(box.stub, box.toolbox) + git.path, env = env + git.env)
         box.guard(environment)
         return Host.run(listOf(Host.sh.path, "./okfw") + args, box.repo, environment)
     }
-
-    private fun git(vararg args: String): String {
-        val run = Host.run(
-            listOf("git") + args,
-            box.repo,
-            mapOf("GIT_CONFIG_GLOBAL" to globalConfig.path, "GIT_CONFIG_NOSYSTEM" to "1"),
-        )
-        check(run.code == 0) { "git ${args.joinToString(" ")}: $run" }
-        if (args.first() == "init") {
-            listOf("user.name" to "t", "user.email" to "t@t", "commit.gpgsign" to "false", "core.autocrlf" to "false")
-                .forEach { (key, value) -> git("config", key, value) }
-        }
-        return run.out.trim()
-    }
-
-    private fun onPath(name: String): File? =
-        System.getenv("PATH").orEmpty().split(File.pathSeparator).filter { it.isNotEmpty() }.map { File(it, name) }.firstOrNull { it.isFile }
 
     private companion object {
         /** The latest published release. */

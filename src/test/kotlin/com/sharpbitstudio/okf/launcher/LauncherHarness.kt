@@ -106,7 +106,8 @@ internal object Host {
     /** `sha256sum` where the machine has it, else `shasum` (macOS before 15 has only the latter). */
     val shaTool: String by lazy { if (tool("sha256sum") != null) "sha256sum" else "shasum" }
 
-    private fun onPath(name: String): File? =
+    /** The first executable [name] on this JVM's `PATH`, or `null`. */
+    fun onPath(name: String): File? =
         System.getenv("PATH").orEmpty().split(File.pathSeparator).filter { it.isNotEmpty() }
             .map { File(it, name) }
             .firstOrNull { it.isFile && it.canExecute() }
@@ -394,5 +395,45 @@ internal class LauncherSandbox(val root: File) {
 
         fun sha256(bytes: ByteArray): String =
             java.security.MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
+    }
+}
+
+/**
+ * The real git in [box]'s repository, isolated from this machine's configuration: [env] points `GIT_CONFIG_GLOBAL` at an
+ * empty `gitconfig` in the sandbox and turns the system configuration off. With [onPath], [path] is what a run's `PATH`
+ * needs besides the stub directory and toolbox so that the jar's own git calls find `git`: the directory of `git.exe` on
+ * Windows; on POSIX nothing, since a `git` link is created here in the stub directory. Without it, git stays off the
+ * runs' `PATH` and no link is created. Create at most one with [onPath] per sandbox: on POSIX a second one fails, since
+ * the link already exists.
+ */
+internal class SandboxGit(private val box: LauncherSandbox, onPath: Boolean = true) {
+    private val globalConfig: File = box.root.resolve("gitconfig").apply { writeText("") }
+
+    /** git's isolation, for every git call and every run that may call git. */
+    val env: Map<String, String> = mapOf("GIT_CONFIG_GLOBAL" to globalConfig.path, "GIT_CONFIG_NOSYSTEM" to "1")
+
+    val path: List<File> =
+        when {
+            !onPath -> emptyList()
+            WINDOWS -> listOf(checkNotNull(Host.onPath("git.exe")) { "git.exe on the PATH" }.parentFile)
+            else -> {
+                val git = checkNotNull(Host.onPath("git")) { "git on the PATH" }
+                Files.createSymbolicLink(box.stub.resolve("git").toPath(), git.toPath())
+                emptyList()
+            }
+        }
+
+    /** Makes the repo a git work tree on `main` with an isolated commit identity. */
+    fun init() {
+        this("init", "-q", "-b", "main")
+        listOf("user.name" to "t", "user.email" to "t@t", "commit.gpgsign" to "false", "core.autocrlf" to "false")
+            .forEach { (key, value) -> this("config", key, value) }
+    }
+
+    /** `git [args]` in the repo; fails unless it exits 0. Returns its stdout, trimmed. */
+    operator fun invoke(vararg args: String): String {
+        val run = Host.run(listOf("git") + args, box.repo, env)
+        check(run.code == 0) { "git ${args.joinToString(" ")}: $run" }
+        return run.out.trim()
     }
 }
