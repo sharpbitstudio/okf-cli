@@ -1,8 +1,10 @@
 package com.sharpbitstudio.okf.action
 
 import com.sharpbitstudio.okf.launcher.Host
+import com.sharpbitstudio.okf.launcher.LauncherSandbox.Companion.quote
 import com.sharpbitstudio.okf.launcher.Run
 import com.sharpbitstudio.okf.launcher.WINDOWS
+import com.sharpbitstudio.okf.launcher.shell
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -52,7 +54,7 @@ class ActionCheckTest {
         link("sh", checkNotNull(Host.tool("sh")) { "this machine has no sh" })
         link("grep", checkNotNull(Host.tool("grep")) { "this machine has no grep" })
         link("tr", checkNotNull(Host.tool("tr")) { "this machine has no tr" })
-        link("git", checkNotNull(onPath(if (WINDOWS) "git.exe" else "git")) { "git on the PATH" })
+        link("git", checkNotNull(Host.onPath(if (WINDOWS) "git.exe" else "git")) { "git on the PATH" })
         git(work, "init", "-q")
         stub()
     }
@@ -446,14 +448,6 @@ class ActionCheckTest {
         }
         return run.out.trim()
     }
-
-    private fun onPath(name: String): File? =
-        System.getenv("PATH").orEmpty().split(File.pathSeparator).filter { it.isNotEmpty() }.map { File(it, name) }.firstOrNull { it.isFile }
-
-    /** [this] as the shell sees it in an argument or variable: with `/` on Windows. */
-    private val File.shell: String get() = if (WINDOWS) invariantSeparatorsPath else path
-
-    private fun quote(value: String) = "'" + value.replace("'", "'\\''") + "'"
 
     companion object {
         private val INPUT_DEFAULTS = mapOf(
