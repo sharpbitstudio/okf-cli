@@ -3,8 +3,10 @@ package com.sharpbitstudio.okf.action
 import com.sharpbitstudio.okf.cli.Launcher
 import com.sharpbitstudio.okf.launcher.Host
 import com.sharpbitstudio.okf.launcher.LauncherSandbox
+import com.sharpbitstudio.okf.launcher.LauncherSandbox.Companion.quote
 import com.sharpbitstudio.okf.launcher.Run
 import com.sharpbitstudio.okf.launcher.WINDOWS
+import com.sharpbitstudio.okf.launcher.shell
 import com.sun.net.httpserver.HttpExchange
 import com.sun.net.httpserver.HttpServer
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -73,7 +75,7 @@ class XcheckActionTest {
         box.toolbox(LauncherSandbox.BASE_TOOLS + Host.shaTool + "cat" + (if (WINDOWS) emptyList() else listOf("sh")))
         box.curl(serve = null)
         gitConfig.writeText("")
-        realGit = checkNotNull(onPath(if (WINDOWS) "git.exe" else "git")) { "git on the PATH" }
+        realGit = checkNotNull(Host.onPath(if (WINDOWS) "git.exe" else "git")) { "git on the PATH" }
         gitPath = if (WINDOWS) listOf(realGit.parentFile, Host.usrBin) else emptyList()
         gitWrapper()
 
@@ -1014,14 +1016,6 @@ class XcheckActionTest {
     }
 
     private fun basic(user: String, password: String) = "Basic " + Base64.getEncoder().encodeToString("$user:$password".toByteArray())
-
-    private fun onPath(name: String): File? =
-        System.getenv("PATH").orEmpty().split(File.pathSeparator).filter { it.isNotEmpty() }.map { File(it, name) }.firstOrNull { it.isFile }
-
-    /** [this] as the shell sees it in an argument or variable: with `/` on Windows. */
-    private val File.shell: String get() = if (WINDOWS) invariantSeparatorsPath else path
-
-    private fun quote(value: String) = "'" + value.replace("'", "'\\''") + "'"
 
     /**
      * Serves the files under [root] read-only over HTTP on the loopback interface, as git's dumb HTTP transport reads a

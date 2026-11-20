@@ -8,6 +8,9 @@ import java.util.concurrent.TimeUnit
 
 internal val WINDOWS = System.getProperty("os.name").startsWith("Windows")
 
+/** [this] as the shell sees it given in an argument or variable: with `/` on Windows (MSYS also reads `C:/…`). */
+internal val File.shell: String get() = if (WINDOWS) invariantSeparatorsPath else path
+
 /** A child process's exit code and output (UTF-8, as written). */
 internal data class Run(val code: Int, val out: String, val err: String) {
     /** The same with CRLF line ends as LF (Java writes CRLF on Windows). */
@@ -342,9 +345,6 @@ internal class LauncherSandbox(val root: File) {
         val script = root.resolve("pwd.sh").apply { writeText("cd \"\$1\" && pwd\n") }
         return Host.run(listOf(Host.sh.path, script.shell, dir.shell), root, emptyMap()).out.trim()
     }
-
-    /** [file] as the shell sees it given in an argument or variable: with `/` on Windows (MSYS also reads `C:/…`). */
-    val File.shell: String get() = if (WINDOWS) invariantSeparatorsPath else path
 
     /** The real `cat`, by absolute path: the stubs use it, the launcher does not, so it stays out of the toolbox. */
     private val cat = quote(checkNotNull(Host.tool("cat")) { "this machine has no cat" }.shell)

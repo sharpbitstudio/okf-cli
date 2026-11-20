@@ -1,7 +1,7 @@
 package com.sharpbitstudio.okf.action
 
 import com.sharpbitstudio.okf.launcher.Host
-import com.sharpbitstudio.okf.launcher.WINDOWS
+import com.sharpbitstudio.okf.launcher.shell
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -39,9 +39,6 @@ class ImpactArgsTest {
         assertTrue(strict == "true" || strict == "false", run.toString())
         return (if (baseSet == "1") listOf("--base=$base") else emptyList()) + "--impact-strict=$strict"
     }
-
-    /** [this] as the shell reads it in an argument: with `/` on Windows. */
-    private val File.shell: String get() = if (WINDOWS) invariantSeparatorsPath else path
 
     private val sha = "1b2c3d4e5f60718293a4b5c6d7e8f90123456789"
 
