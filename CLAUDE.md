@@ -9,7 +9,9 @@ together, `okf init` writes `okf.yaml` and the bundle root for a new bundle, `ok
 writing documents for the checks in `docs/authoring.md`; the launcher and its pin file in `docs/launcher.md`; the
 GitHub Actions in `docs/github-actions.md`; build, CI, release and third-party licences in
 `docs/build-release.md`. `README.md` is only the landing page;
-`CHANGELOG.md` records every change per version.
+`CHANGELOG.md` records, per version, every change to what users run (the CLI, the launcher, the GitHub Actions,
+runtime dependencies, what the released jar contains), under `## Unreleased` until the release; changes to tests, CI
+or docs alone get no entry.
 
 ## Commands
 

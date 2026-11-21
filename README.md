@@ -130,6 +130,11 @@ The documentation is this repo's own OKF bundle ([`docs/index.md`](docs/index.md
   assets, the self-check of `docs/`, third-party licences;
 - [`CHANGELOG.md`](CHANGELOG.md): changes per version.
 
+## Contributing
+
+Contributions are welcome: [`CONTRIBUTING.md`](CONTRIBUTING.md) describes the build, the self-checked docs and how
+pull requests are merged. Report a vulnerability privately, as [`SECURITY.md`](SECURITY.md) describes.
+
 ## Licence
 
 Apache-2.0: see [`LICENSE`](LICENSE) and [`NOTICE`](NOTICE). The self-contained `-all` jar also bundles
