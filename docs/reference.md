@@ -23,6 +23,8 @@ bundle: it writes `okf.yaml`, the bundle-root `<docs_root>/index.md` and the lau
 ([Starting a bundle](#starting-a-bundle-okf-init)). `okf wrapper` writes or refreshes the launcher `okfw`, which runs
 the okf-cli version a repository pins ([The launcher](#the-launcher-okf-wrapper), [launcher.md](launcher.md)).
 
+How to write `code_paths` globs, code references and `Docs-Impact:` trailers is in [authoring.md](authoring.md).
+
 Documentation can be spread over several repos (a federation): one **hub** repo holds the Feature Records, and
 **satellite** repos hold `Satellite Note`s that belong to a feature recorded in the hub. A single repo needs none
 of this: it uses `index`, `check` and `impact` and leaves `hub_repo` and `satellites` out of its `okf.yaml`.
@@ -346,7 +348,7 @@ satellites:
 ## Bundle rules
 
 What the tool enforces beyond the frontmatter of single documents (how those rules relate to the OKF spec is
-summarised in the [README](../README.md)):
+summarised in the [README](../README.md); how to write documents that pass them, in [authoring.md](authoring.md)):
 
 - **Document types** (`type`): the built-in types `ADR`, `Feature Record`, `Plan`, `Guide`, `Risk Register`,
   `Convention`, `Product Spec`, `Satellite Note`, plus the names in `extra_types`. Only the built-in `ADR`,
@@ -354,17 +356,23 @@ summarised in the [README](../README.md)):
 - **ADRs** (`type: ADR`, files named `adr/ADR-NNN-<slug>.md` with a three-digit number): an ADR needs a non-empty
   `title` and `description`, `tags` as a non-empty YAML list of strings, and `adr_date` as a valid `YYYY-MM-DD` date;
   `amended`, when present, lists the dates of later changes, strictly ascending and each after `adr_date`. It is kept
-  in sync both ways with the amendment markers in the body (such as `**Update YYYY-MM-DD:**`; fenced blocks and code
-  spans are not scanned): a listed date without a marker and a marker whose date is not listed are both problems,
-  and a marker dated the same day as `adr_date` is reported as one to drop, since same-day changes are part of the
-  original decision. `adr_status` is one of
+  in sync both ways with the amendment markers in the body: a heading `## Update YYYY-MM-DD`,
+  `### Update YYYY-MM-DD`, `## Amendment — YYYY-MM-DD` or `### Amendment — YYYY-MM-DD` at the start of a line,
+  or `**Update YYYY-MM-DD` anywhere in a line (usually written `**Update YYYY-MM-DD:**`; the older
+  `**Naknadna napomena (YYYY-MM-DD` also counts); fenced blocks and code spans are not scanned. A listed date
+  without a marker and a marker whose date is not listed are both problems, and a marker dated the same day as
+  `adr_date` is reported as one to drop, since same-day changes are part of the original decision. The ADR index
+  shows the latest `amended` date after the entry's link. `adr_status` is one of
   `Proposed`, `Accepted`, `Resolved`, `Superseded`, `Deprecated`, `Rejected`, and `status` must be the matching
   lifecycle value: `draft` for `Proposed`, `stable` for `Accepted` and `Resolved`, `deprecated` for `Superseded`,
   `Deprecated` and `Rejected`. The generated ADR index groups the entries under the headings `Accepted`,
   `Proposed`, `Resolved`, `Superseded / Deprecated` and `Rejected`, in that order, and leaves out empty ones.
-  `superseded_by` is required with `Superseded` and not allowed otherwise. `code_paths` is mandatory under
-  `--code-paths-required` only for `Accepted` and `Resolved`; `okf impact` skips documents whose `status` is
-  `deprecated`.
+  `superseded_by` is required with `Superseded` and not allowed otherwise: a path relative to the ADR's own file,
+  not starting with `/`, to another ADR file that exists in the same `adr/` directory, usually
+  `./ADR-NNN-<slug>.md` (write it with `/`). The ADR index adds `→ [ADR-NNN](<superseded_by>)` to the entry, the
+  number taken from the last `/`-separated part of the path; when that part is not an ADR file name, the label is
+  the path as written. `code_paths` is mandatory under `--code-paths-required` only for `Accepted` and `Resolved`;
+  `okf impact` skips documents whose `status` is `deprecated`.
 - **`Satellite Note`**: a note in a sibling repo that belongs to a feature whose record lives in the hub.
   `hub: features/<slug>` is required (slug: lowercase letters and digits, words joined by single hyphens,
   e.g. `hub: features/checkout`) and names the hub's Feature Record in the `Docs-Impact:` ID form.

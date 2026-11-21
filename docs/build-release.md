@@ -264,6 +264,11 @@ the change is acknowledged with a commit trailer naming it: `Docs-Impact: refere
 `Docs-Impact: build-release — <reason>` for a change to the build, the workflows, the Dependabot configuration,
 the licence files or `.gitattributes`.
 
+[authoring.md](authoring.md) also covers the eight Kotlin files listed in its `code_paths`, which implement
+frontmatter parsing, `code_paths` globs, code references and `Docs-Impact:` trailers, so a change to one of them
+impacts both documents: each must be updated or acknowledged, in that commit or a commit that descends from it,
+in any mix; one trailer can name both (`Docs-Impact: reference, authoring — <reason>`).
+
 ## Dependency updates
 
 Dependabot (`.github/dependabot.yml`) opens version-update pull requests every Monday, at most five open per

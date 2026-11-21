@@ -98,6 +98,8 @@ which the pin then rests. To build the jar from source instead, follow the "Buil
 - In CI, the GitHub Action runs `check` and `impact` with the pinned version, and the xcheck action runs a hub's
   cross-repo check ([`docs/github-actions.md`](docs/github-actions.md)).
 - Without the launcher, run the jar with `java -jar` ([`docs/reference.md`](docs/reference.md#running-it)).
+- Writing documents: what `okf check` and `okf impact` accept, and how to acknowledge a code change with a
+  `Docs-Impact:` trailer ([`docs/authoring.md`](docs/authoring.md)).
 
 `okf init` sets `index_command: ./okfw index`, the command named in the generated indexes and in every "run …"
 hint; it must be one line. All `okf.yaml` keys and their rules are in [`docs/reference.md`](docs/reference.md).
@@ -118,6 +120,8 @@ The documentation is this repo's own OKF bundle ([`docs/index.md`](docs/index.md
 
 - [`docs/reference.md`](docs/reference.md): the CLI (options, exit codes), the `okf.yaml` schema, the bundle
   rules, the cross-repo check (`xcheck`), how to run the tool, and the compatibility contract;
+- [`docs/authoring.md`](docs/authoring.md): writing documents that pass the checks (frontmatter, `code_paths` globs,
+  code references and how to opt a line out, `Docs-Impact:` trailers, first steps for documents and ADRs);
 - [`docs/launcher.md`](docs/launcher.md): the launcher `okfw`, its pin file, `okfw --update` / `--verify` and the
   provenance policy;
 - [`docs/github-actions.md`](docs/github-actions.md): the GitHub Action (`check` and `impact`) and the xcheck
