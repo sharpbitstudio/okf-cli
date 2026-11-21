@@ -1,5 +1,9 @@
 /gradlew text eol=lf
 /launcher/okfw text eol=lf
+/LICENSE -text
+/NOTICE text eol=lf
+/third-party-licenses/** -text
+/third-party-licenses/README.md text eol=lf
 *.sh text eol=lf
 *.bat text eol=crlf
 *.cmd text eol=crlf

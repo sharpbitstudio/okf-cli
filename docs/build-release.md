@@ -3,7 +3,7 @@ type: Guide
 title: "Build, CI and release"
 description: "How okf-cli is built and tested (bytecode 17 on JDK 25, the three jars, the licence files inside them and the launcher in the thin and all jars, the network tests), what CI runs (build, e2e), how a GitHub release gets its jar, checksum and build-provenance attestation, how this repo checks its own docs bundle, how dependency updates are handled, and where the third-party licences live."
 tags: [build, ci, e2e, release, attestation, licences]
-code_paths: ["build.gradle.kts", "gradle.properties", "gradle/libs.versions.toml", ".github/workflows/**", ".github/dependabot.yml", "src/main/resources/com/sharpbitstudio/okf/version.properties", "LICENSE", "NOTICE", "third-party-licenses/**"]
+code_paths: ["build.gradle.kts", "gradle.properties", "gradle/libs.versions.toml", ".github/workflows/**", ".github/dependabot.yml", "src/main/resources/com/sharpbitstudio/okf/version.properties", "LICENSE", "NOTICE", "third-party-licenses/**", ".gitattributes"]
 ---
 # Build, CI and release
 
@@ -29,6 +29,13 @@ The version comes from `gradle.properties` (the next version with `-SNAPSHOT` be
 Every jar carries this repo's `LICENSE` and `NOTICE` in `META-INF/`. The `all` jar also carries the licences of
 the components it bundles, under `META-INF/licenses/<component>/…`, copied from `third-party-licenses/` (see
 [Third-party licences](#third-party-licences)).
+
+`.gitattributes` exempts `LICENSE` and the upstream licence texts in `third-party-licenses/` from line-end
+conversion (`-text`) and checks out `NOTICE` and that directory's README, this project's own files, with LF
+(`text eol=lf`). A fresh checkout therefore holds the committed bytes of these files whatever its line-ending
+settings, and the jars copy them from it: every jar carries `LICENSE` and `NOTICE`, the `all` jar also the licence
+directory. A checkout made earlier keeps the copies it has until they are checked out again. The same file keeps
+`gradlew`, `launcher/okfw` and `*.sh` files on LF, `*.bat` and `*.cmd` files on CRLF, and marks `*.jar` as binary.
 
 The thin and the `all` jar also carry the launcher, `launcher/okfw` and `launcher/okfw.cmd`, as resources under
 `com/sharpbitstudio/okf/launcher/`: `okf wrapper` and `okf init` write the copy the running jar was built with
@@ -251,11 +258,11 @@ Each `-Pokf.*` property that is set becomes one `--<option>=<value>` (an empty v
 `-Pokf.base=` skips the impact check).
 
 [reference.md](reference.md) carries `code_paths` on `src/main/kotlin/com/sharpbitstudio/okf/**`, and this
-document on the build, the workflows, the Dependabot configuration and the licence files. A change there therefore
-fails `okfImpact` on a branch until the matching document is updated, or until the change is acknowledged with a
-commit trailer naming it: `Docs-Impact: reference — <reason>` for a Kotlin change,
-`Docs-Impact: build-release — <reason>` for a change to the build, the workflows, the Dependabot configuration or
-the licence files.
+document on the build, the workflows, the Dependabot configuration, the licence files and `.gitattributes`. A change
+there therefore fails the strict `okfImpact` run above on a branch until the matching document is updated, or until
+the change is acknowledged with a commit trailer naming it: `Docs-Impact: reference — <reason>` for a Kotlin change,
+`Docs-Impact: build-release — <reason>` for a change to the build, the workflows, the Dependabot configuration,
+the licence files or `.gitattributes`.
 
 ## Dependency updates
 

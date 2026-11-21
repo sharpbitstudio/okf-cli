@@ -6,8 +6,8 @@ together, `okf init` writes `okf.yaml` and the bundle root for a new bundle, `ok
 `okfw` (`launcher/`, embedded in the jar) that runs the version a repo pins, `okf version` prints
 `okf-cli <version>`. Documentation lives in the repo's own OKF bundle:
 `docs/index.md`; CLI, `okf.yaml` schema, bundle rules and the compatibility contract in `docs/reference.md`;
-the launcher and its pin file in `docs/launcher.md`; build, CI, release and third-party licences in
-`docs/build-release.md`. `README.md` is only the landing page;
+the launcher and its pin file in `docs/launcher.md`; the GitHub Actions in `docs/github-actions.md`; build, CI,
+release and third-party licences in `docs/build-release.md`. `README.md` is only the landing page;
 `CHANGELOG.md` records every change per version.
 
 ## Commands
@@ -26,8 +26,9 @@ java -jar build/libs/okf-cli-<version>-all.jar version
 - `docs/reference.md` carries `code_paths: src/main/kotlin/com/sharpbitstudio/okf/**`, so every behaviour change
   fails `okfImpact` on a branch until the reference is updated in the same branch. Alternatively, add a
   `Docs-Impact: reference — <reason>` trailer, which fits pure refactors.
-- `docs/build-release.md` covers `build.gradle.kts`, the workflows, `LICENSE`, `NOTICE` and
-  `third-party-licenses/`; `docs/launcher.md` covers `launcher/`.
+- `docs/build-release.md` covers `build.gradle.kts`, the workflows, `LICENSE`, `NOTICE`, `third-party-licenses/`
+  and `.gitattributes`; `docs/launcher.md` covers `launcher/`; `docs/github-actions.md` covers `action.yml`,
+  `action/` and `xcheck/`.
 
 ## Conventions
 
