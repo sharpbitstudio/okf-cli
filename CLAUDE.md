@@ -6,8 +6,9 @@ together, `okf init` writes `okf.yaml` and the bundle root for a new bundle, `ok
 `okfw` (`launcher/`, embedded in the jar) that runs the version a repo pins, `okf version` prints
 `okf-cli <version>`. Documentation lives in the repo's own OKF bundle:
 `docs/index.md`; CLI, `okf.yaml` schema, bundle rules and the compatibility contract in `docs/reference.md`;
-the launcher and its pin file in `docs/launcher.md`; the GitHub Actions in `docs/github-actions.md`; build, CI,
-release and third-party licences in `docs/build-release.md`. `README.md` is only the landing page;
+writing documents for the checks in `docs/authoring.md`; the launcher and its pin file in `docs/launcher.md`; the
+GitHub Actions in `docs/github-actions.md`; build, CI, release and third-party licences in
+`docs/build-release.md`. `README.md` is only the landing page;
 `CHANGELOG.md` records every change per version.
 
 ## Commands
@@ -24,11 +25,16 @@ java -jar build/libs/okf-cli-<version>-all.jar version
 - `docs/` is checked by the code this build compiles: the `okf*` tasks run `com.sharpbitstudio.okf.cli.Main`
   from `sourceSets.main`, not a released jar.
 - `docs/reference.md` carries `code_paths: src/main/kotlin/com/sharpbitstudio/okf/**`, so every behaviour change
-  fails `okfImpact` on a branch until the reference is updated in the same branch. Alternatively, add a
-  `Docs-Impact: reference — <reason>` trailer, which fits pure refactors.
+  fails the strict `okfImpact` on a branch until the reference is updated in that commit or a commit that descends
+  from it. Alternatively, add a `Docs-Impact: reference — <reason>` trailer, which fits pure refactors.
 - `docs/build-release.md` covers `build.gradle.kts`, the workflows, `LICENSE`, `NOTICE`, `third-party-licenses/`
   and `.gitattributes`; `docs/launcher.md` covers `launcher/`; `docs/github-actions.md` covers `action.yml`,
   `action/` and `xcheck/`.
+- `docs/authoring.md` also covers the Kotlin files that implement frontmatter parsing, `code_paths` globs, code
+  references and `Docs-Impact:` trailers (`OkfCodePaths.kt`, `OkfFrontmatter.kt`, `OkfGit.kt`, `OkfGlob.kt`,
+  `OkfImpact.kt`, `OkfMarkdown.kt`, `OkfRefChecker.kt`, `RepoIndex.kt`): a change there impacts it as well as
+  `docs/reference.md`, and each needs an update or a trailer (one trailer can name both:
+  `Docs-Impact: reference, authoring — <reason>`).
 
 ## Conventions
 
