@@ -73,8 +73,8 @@ tasks.jar {
 }
 
 // Self-contained CLI jar (`okf-cli-<v>-all.jar`) for repos without Gradle: main output plus the runtime
-// classpath (Kotlin stdlib with JetBrains Annotations, SnakeYAML) unpacked into one jar, with the licences of those bundled components
-// (third-party-licenses/) under META-INF/licenses/.
+// classpath (Kotlin stdlib with JetBrains Annotations, SnakeYAML) unpacked into one jar, with the licences of those
+// bundled components (third-party-licenses/) under META-INF/licenses/.
 val allJar = tasks.register<Jar>("allJar") {
     group = "build"
     description = "Assembles the self-contained CLI jar (classifier `all`)."
@@ -105,8 +105,8 @@ tasks.assemble {
 
 /**
  * System properties of the test JVMs: `okf.repoRoot` (this checkout, for the committed `launcher/`, `action/`,
- * `action.yml` and `xcheck/`) and `okf.allJar` (this build's `all` jar, which LauncherJarTest runs through the launcher). The jar is
- * an input, so `test` builds it first.
+ * `action.yml` and `xcheck/`) and `okf.allJar` (this build's `all` jar, which LauncherJarTest runs through the
+ * launcher). The jar is an input, so `test` builds it first.
  */
 abstract class LauncherTestProperties : CommandLineArgumentProvider {
     @get:Internal
