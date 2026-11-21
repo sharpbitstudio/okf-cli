@@ -165,9 +165,10 @@ The step fails when the action exits with a code other than `0`:
 
 The error annotations have the title `okf-cli`. Before each command, the action writes one line to standard error,
 `okf-cli action: <command and arguments>`; the output of the launcher and the jar, with their own annotations, is
-passed on unchanged. The jar's annotations (`::error file=…`, `::warning file=…`) name files relative to `repo`, so
-with a `repo` other than the workspace root GitHub may not link them to the file: check out the repository at the
-workspace root for annotations that point at the offending line.
+passed on unchanged. The jar's annotations that name a file (`::error file=…`, `::warning file=…`) name it relative
+to `repo`, so with a `repo` other than the workspace root GitHub may not link them to the file: check out the
+repository at the workspace root so that these paths match the workspace (a code-reference finding names the line
+of the reference, an impact finding line 1 of the document; [reference.md](reference.md#cli)).
 
 ## The xcheck action
 
