@@ -107,8 +107,10 @@ hint; it must be one line. All `okf.yaml` keys and their rules are in [`docs/ref
 `0` OK; `1` findings that fail under the given strictness, or the command could not complete (for example
 broken frontmatter for `index`, or git not runnable); `2` a usage, `--repo` or `okf.yaml` error. Info lines go
 to stdout, warnings and failures to stderr. Under GitHub Actions (`GITHUB_ACTIONS=true`) the code-reference
-findings of `check` and the findings of `impact` are also printed as `::warning` / `::error` workflow
-commands, so they show up as annotations on the offending doc line.
+findings of `check` and the findings of `impact` are also printed as `::warning` / `::error` workflow commands,
+GitHub's annotation format: a code-reference finding names the file and the line of the reference, an impact
+finding the document it names and line 1, and an impact finding about a commit trailer no file (details in
+[`docs/reference.md`](docs/reference.md#cli)).
 
 ## Documentation
 

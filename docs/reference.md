@@ -70,7 +70,10 @@ trailing-dot/blank rule) or `--index-command`. For `wrapper`, `1` means a file i
 launcher (nothing written) or a failed write.
 Info lines and annotations go to stdout, warnings and failures to stderr. Under GitHub Actions
 (`GITHUB_ACTIONS=true`) the code-reference findings of `check` and the findings of `impact` are also printed as
-`::warning` / `::error` workflow commands, so they show up as annotations on the offending doc line.
+`::warning` / `::error` workflow commands, GitHub's annotation format: a code-reference finding names the file and
+the line of the reference, an impact finding the document it names and line 1. An impact finding about a commit
+trailer names no file, nor does the warning that the base or merge-base cannot be found (printed without
+`--impact-strict`; with it, that case fails without an annotation).
 
 ```bash
 java -jar okf-cli-<version>-all.jar check --repo=. --strict --refs-strict --code-paths-required
