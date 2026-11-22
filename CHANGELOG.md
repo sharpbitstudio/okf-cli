@@ -1,6 +1,16 @@
 # Changelog
 
-## Unreleased
+## 1.0.1 — 2026-11-22
+
+Bug fixes in the jar and in the xcheck action; no new `okf.yaml` keys, command-line flags or defaults. In the jar,
+`okf check` no longer stops on a reference to the repository root, and `okf check` and `okf xcheck` no longer stop
+on a path that git refuses to check against its ignore rules, with a pathspec environment variable set (with
+`GIT_LITERAL_PATHSPECS`, `okf impact` also missed commits and `okf xcheck` skipped its drift check), or on a long
+link target; the messages of reference findings show control characters as `\uNNNN`. A repository takes the jar
+fixes with `./okfw --update 1.0.1`; the launcher is the same as in 1.0.0, so in a repository set up with 1.0.0 only
+the pin file changes. The xcheck action gives its token only to the server the workflow runs on; a workflow takes
+that fix by moving its `uses: sharpbitstudio/okf-cli/xcheck@…` reference to the commit 1.0.1 was built from, or to
+the tag `v1.0.1`.
 
 - xcheck action: the token goes only to the server the workflow runs on (`GITHUB_SERVER_URL`: its scheme, host and
   port), for repository requests. git now gets it from a credential helper scoped to that URL,
@@ -19,11 +29,11 @@
   `docs/sub/x.md`. The root counts as an existing directory, so the reference resolves and is counted like any other,
   and the run reports its other findings as usual. Called through the Kotlin API without a git ignore lookup,
   `OkfRefChecker` reported such a reference as not found; it resolves there too.
-- Fix: reference findings show control characters and line separators (U+2028, U+2029) as `\uNNNN`, as `okf init`
-  already does, instead of writing them as they are. They come from a decoded link target (`%00`, `%0A`, `%1B`), the
-  line part of a code span, or a file name, and split the `OKF WARNING:` line or put a NUL or a terminal escape
-  sequence into the console output, the annotations and the `okf xcheck` report. Only findings that contain such a
-  character change.
+- Fix: the messages of reference findings show control characters and line separators (U+2028, U+2029) as
+  `\uNNNN`, as `okf init` already does, instead of writing them as they are. They come from a decoded link target
+  (`%00`, `%0A`, `%1B`), the line part of a code span, or a file name, and split the `OKF WARNING:` line or put a NUL
+  or a terminal escape sequence into the console output, the annotations and the `okf xcheck` report. Only findings
+  whose message contains such a character change.
 - Fix: okf runs git without `GIT_LITERAL_PATHSPECS`, `GIT_GLOB_PATHSPECS`, `GIT_NOGLOB_PATHSPECS` and
   `GIT_ICASE_PATHSPECS` (which options such as `git --literal-pathspecs` set for the commands git starts). With one
   of them enabled, `okf check` and `okf xcheck` stopped with `git check-ignore failed (exit 128)`, and with

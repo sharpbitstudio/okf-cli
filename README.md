@@ -64,10 +64,10 @@ lines) and how to keep the old output.
 In the root of the git work tree whose docs you want to check, download the self-contained jar and its checksum
 into a directory outside the work tree (here `$HOME/okf-cli`), then start a bundle with `okf init` and check it
 through the launcher. Each step runs only if the one before it passed, so nothing runs the jar unless the download
-and the checksum passed (`version` prints `okf-cli 1.0.0`):
+and the checksum passed (`version` prints `okf-cli 1.0.1`):
 
 ```bash
-VERSION=1.0.0
+VERSION=1.0.1
 BASE="https://github.com/sharpbitstudio/okf-cli/releases/download/v$VERSION"
 DL="$HOME/okf-cli"
 JAR="$DL/okf-cli-$VERSION-all.jar"
