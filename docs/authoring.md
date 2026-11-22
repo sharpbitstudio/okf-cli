@@ -235,8 +235,10 @@ directory does not. The repository root itself always exists: for code spans at 
 ### Links
 
 Inline links and images (`[text](target)`, `![alt](target)`) on one line, outside code spans, without brackets
-inside the link text and with no title or one in single or double quotes, are checked; other forms, such as a title
-in parentheses, are not recognised and so not checked:
+inside the link text and with no title or one in single or double quotes, are checked. The target is written in
+`<…>`, where it may contain spaces, or bare: without spaces or tabs, of any length (an inline `data:` image, for
+example), with parentheses only in balanced pairs, at most three deep (`a(b(c(d)))`). Other forms, such as a title
+in parentheses or a bare target with deeper parentheses or an unclosed `(`, are not recognised and so not checked:
 
 - The part of the target before `#` or `?` is taken. A target that is then empty (a link to an anchor), starts with
   `/` or has a scheme (`https:`, `mailto:`) is skipped. Percent escapes such as `%20` are decoded.

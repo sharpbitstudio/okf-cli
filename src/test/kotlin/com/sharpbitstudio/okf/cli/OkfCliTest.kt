@@ -1,6 +1,8 @@
 package com.sharpbitstudio.okf.cli
 
 import com.sharpbitstudio.okf.IndexFixture
+import com.sharpbitstudio.okf.MIB
+import com.sharpbitstudio.okf.assertSameText
 import org.junit.jupiter.api.Assertions.assertArrayEquals
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -194,6 +196,26 @@ class OkfCliTest {
             run.out,
         )
         assertTrue('\u0000' !in run.out + run.err, "no NUL in the output")
+    }
+
+    @Test
+    fun `check skips a megabyte data URI image by its scheme and reports the other findings of the document`() {
+        run("index", "--repo=${repo.path}")
+        // The code span in the image's alt text is a label, not a reference.
+        write("docs/guide.md", "---\ntype: Guide\n---\n# G\n\n![`app/Label.kt`](data:image/png;base64,$MIB) [gone](gone.md)\n\n`app/Gone.kt`\n")
+
+        val run = run("check", "--repo=${repo.path}")
+        assertSameText(
+            "okf check OK: 2 documents with frontmatter validated, 4 code references checked (2 warnings; --refs-strict fails on them).",
+            run.out.trim(),
+        )
+        assertSameText(
+            "OKF WARNING: guide.md:6: link target `gone.md` not found (resolved against the document: docs/gone.md)\n" +
+                "OKF WARNING: guide.md:8: `app/Gone.kt`: file not found in the repo — fix the path, write a sibling-repo path as " +
+                "`<repo>/<path>`, or opt the line out with `<!-- okf: ignore-refs -->`\n",
+            run.err,
+        )
+        assertEquals(0, run.code, "exit code")
     }
 
     @Test

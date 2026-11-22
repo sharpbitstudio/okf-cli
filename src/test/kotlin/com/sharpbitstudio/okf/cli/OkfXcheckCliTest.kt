@@ -1,8 +1,10 @@
 package com.sharpbitstudio.okf.cli
 
 import com.sharpbitstudio.okf.FederatedRepo
+import com.sharpbitstudio.okf.MIB
 import com.sharpbitstudio.okf.OkfConfig
 import com.sharpbitstudio.okf.OkfXcheck
+import com.sharpbitstudio.okf.assertSameText
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -191,6 +193,28 @@ class OkfXcheckCliTest {
         assertEquals(listOf("## (a) Cross-repo references"), text.lines().filter { it.startsWith("## ") })
         assertTrue("\n- hub/docs/guide.md:6: `sat-a/inner/README.md`: $notFound\n" in text, text)
         assertTrue("\n- hub/docs/guide.md:6: `sat-a/lib/gone.kt`: $notFound\n" in text, text)
+    }
+
+    @Test
+    fun `a sibling reference after a megabyte link on the same line is still checked, a code span in the link text is not`() {
+        write(hub, "docs/guide.md", "---\ntype: Guide\n---\n# G\n\n[`sat-a/lib/label.kt`](data:image/png;base64,$MIB) `sat-a/lib/gone.kt` `sat-a/lib/a.kt`\n")
+        commit(hub, "guide", DAY_0)
+
+        val run = xcheck()
+        val problem = "hub/docs/guide.md:6: `sat-a/lib/gone.kt`: file not found in sat-a — fix the path, or opt the line out with " +
+            "`<!-- okf: ignore-refs -->`"
+        val summary = "okf xcheck: 3 repos checked, 6 cross-repo references checked (1 broken), 1 references to non-federated repos " +
+            "not checked, 2 Satellite Notes linked to 1 Feature Records; 1 problem(s), 0 warning(s)."
+        assertSameText("okf xcheck found 1 problem(s):\n  - $problem\n", run.err)
+        assertSameText("$summary\n", run.out)
+        assertEquals(1, run.code, "exit code")
+        // A lost link-text exclusion would add `sat-a/lib/label.kt` as a second problem.
+        assertSameText(
+            "# okf xcheck: 1 problem(s), 0 warning(s)\n\n" +
+                "Cross-repo check of the OKF federation of `hub` (hub + `satellites` in its okf.yaml).\n\n" +
+                "## (a) Cross-repo references\n\n- $problem\n\n---\n\n$summary\n",
+            report.readText(),
+        )
     }
 
     @Test

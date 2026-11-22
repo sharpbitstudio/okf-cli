@@ -2,6 +2,7 @@ package com.sharpbitstudio.okf
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.assertAll
 
 class OkfMarkdownTest {
     @Test
@@ -40,5 +41,64 @@ class OkfMarkdownTest {
         val stripped = OkfMarkdown.stripFencedBlocks(text)
         assertEquals(text.split('\n').size, stripped.split('\n').size)
         assertEquals(listOf("a", "", "", "", "b", "", "", ""), stripped.split('\n'))
+    }
+
+    // Long link targets: a megabyte (MIB) or 100,000 groups, far beyond what a recursive regex repetition survives on a
+    // default thread stack. Each input is its own assertAll executable, so every failing input is recorded.
+
+    @Test
+    fun `a bare destination of a megabyte is one link, at top level and inside one and two levels of parentheses`() {
+        assertAll(
+            { assertSameText(listOf(MdLink(MIB, 0..2)), OkfMarkdown.links("[a]($MIB)")) },
+            { assertSameText(listOf(MdLink("p($MIB)q", 0..2)), OkfMarkdown.links("[b](p($MIB)q)")) },
+            { assertSameText(listOf(MdLink("p(q($MIB)r)s", 0..2)), OkfMarkdown.links("[c](p(q($MIB)r)s)")) },
+        )
+    }
+
+    @Test
+    fun `an inline base64 image of a megabyte is one link, and the links after it on the line are found`() {
+        val line = "![logo](data:image/png;base64,$MIB) [next](next.md \"t\")"
+        val next = line.indexOf("[next]")
+        assertSameText(
+            listOf(MdLink("data:image/png;base64,$MIB", 1..6), MdLink("next.md", next..next + 5)),
+            OkfMarkdown.links(line),
+        )
+    }
+
+    @Test
+    fun `many balanced groups in a long destination, at top level and one level deep`() {
+        val top = "(b)".repeat(100_000)
+        val nested = "p(" + "(d)".repeat(100_000) + ")q"
+        assertAll(
+            { assertSameText(listOf(MdLink(top, 0..2)), OkfMarkdown.links("[a]($top)")) },
+            { assertSameText(listOf(MdLink(nested, 0..2)), OkfMarkdown.links("[c]($nested)")) },
+        )
+    }
+
+    @Test
+    fun `long destinations three or four levels deep, in angle brackets, and long titles and labels parse as before`() {
+        assertAll(
+            { assertSameText(listOf(MdLink("p(q(r($MIB)s)t)u", 0..2)), OkfMarkdown.links("[a](p(q(r($MIB)s)t)u)")) },
+            // Four levels of parentheses: not a link.
+            { assertSameText(emptyList<MdLink>(), OkfMarkdown.links("[b](p(q(r(s($MIB)t)u)v)w)")) },
+            { assertSameText(listOf(MdLink("$MIB y", 0..2)), OkfMarkdown.links("[c](<$MIB y>)")) },
+            { assertSameText(listOf(MdLink("d.md", 0..2)), OkfMarkdown.links("[d](d.md \"$MIB\")")) },
+            { assertSameText(listOf(MdLink("e.md", 0..MIB.length + 1)), OkfMarkdown.links("[$MIB](e.md)")) },
+        )
+    }
+
+    @Test
+    fun `an unclosed angle bracket or a failing title after a long destination`() {
+        val angleTitle = "[b](<$MIB> \"t) [c](c.md)"
+        val c = angleTitle.indexOf("[c]")
+        val bareTitle = "[d]($MIB \"t) [e](e.md)"
+        val e = bareTitle.indexOf("[e]")
+        assertAll(
+            // `<` without `>` is read as the first character of a bare target.
+            { assertSameText(listOf(MdLink("<$MIB", 0..2)), OkfMarkdown.links("[a](<$MIB)")) },
+            { assertSameText(listOf(MdLink("c.md", c..c + 2)), OkfMarkdown.links(angleTitle)) },
+            { assertSameText(listOf(MdLink("e.md", e..e + 2)), OkfMarkdown.links(bareTitle)) },
+            { assertSameText(emptyList<MdLink>(), OkfMarkdown.links("[f]($MIB")) },
+        )
     }
 }

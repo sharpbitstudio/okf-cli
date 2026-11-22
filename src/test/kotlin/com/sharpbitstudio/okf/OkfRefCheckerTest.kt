@@ -455,6 +455,26 @@ class OkfRefCheckerTest {
         )
     }
 
+    @Test
+    fun `a relative link target of 100,000 characters is checked, and a short reference on the same line is still reported`() {
+        val target = "a".repeat(99_997) + ".md"
+        val notFound = "file not found in the repo — fix the path, write a sibling-repo path as `<repo>/<path>`, " +
+            "or opt the line out with `<!-- okf: ignore-refs -->`"
+        // Code spans come before links in a line's references; the sort by line keeps that order.
+        assertSameText(
+            listOf(
+                RefFinding("adr/ADR-001-test.md", 4, "`Gone.java`: $notFound"),
+                RefFinding("adr/ADR-001-test.md", 4, "link target `$target` not found (resolved against the document: docs/adr/$target)"),
+                RefFinding(
+                    "adr/ADR-001-test.md",
+                    4,
+                    "link target `../features/gone.md` not found (resolved against the document: docs/features/gone.md)",
+                ),
+            ),
+            findings("[long]($target) `Gone.java` [b](../features/gone.md)\n"),
+        )
+    }
+
     private fun checker(ignored: Set<String> = emptySet()) =
         OkfRefChecker(index, "docs", externalRepos = HUB_EXTERNAL_REPOS) { paths -> paths.filter { it in ignored }.toSet() }
 
