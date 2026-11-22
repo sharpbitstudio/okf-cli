@@ -123,8 +123,8 @@ class OkfRefChecker(
             }
             when (outcome) {
                 Outcome.Ok -> Unit
-                is Outcome.Problem -> findings += sibling to outcome.message
-                is Outcome.Unresolved -> pending += Triple(sibling, outcome.message, outcome.probes)
+                is Outcome.Problem -> findings += sibling to printable(outcome.message)
+                is Outcome.Unresolved -> pending += Triple(sibling, printable(outcome.message), outcome.probes)
             }
         }
         val ignoredPaths = ignored(pending.flatMap { it.third }.distinct())
@@ -146,8 +146,8 @@ class OkfRefChecker(
                     checked++
                     when (val outcome = verify(ref, docDir)) {
                         Outcome.Ok -> Unit
-                        is Outcome.Problem -> findings += RefFinding(doc.path, lineNo, outcome.message)
-                        is Outcome.Unresolved -> pending += RefFinding(doc.path, lineNo, outcome.message) to outcome.probes
+                        is Outcome.Problem -> findings += RefFinding(doc.path, lineNo, printable(outcome.message))
+                        is Outcome.Unresolved -> pending += RefFinding(doc.path, lineNo, printable(outcome.message)) to outcome.probes
                     }
                 }
             }
@@ -405,6 +405,15 @@ class OkfRefChecker(
         }
 
         private fun join(dir: String, path: String) = if (dir.isEmpty()) path else "$dir/$path"
+
+        /**
+         * [text] with control characters and line separators as `\uNNNN` (as `okf init` shows them), so a finding stays
+         * one printable line.
+         */
+        private fun printable(text: String): String =
+            if (text.none(::unprintable)) text else text.map { if (unprintable(it)) "\\u%04x".format(it.code) else it.toString() }.joinToString("")
+
+        private fun unprintable(c: Char) = c.isISOControl() || c == '\u2028' || c == '\u2029'
 
         /** `%20`-style escapes in link targets (`Plaza%20Notes.md`); a malformed escape leaves the target as written. */
         private fun percentDecode(path: String): String =
