@@ -94,6 +94,26 @@ class OkfCliTest {
     }
 
     @Test
+    fun `check resolves links and directory spans that name the repository root`() {
+        run("index", "--repo=${repo.path}")
+        write(".gitignore", "/generated/\n")
+        // The root references sit in the same check run as a gitignored path (skipped) and a missing one (reported).
+        write("docs/guide.md", "---\ntype: Guide\n---\n# G\n\n[top](../) `./../` `app/Gone.kt` `generated/Gone.kt`\n")
+        write("docs/sub/x.md", "---\ntype: Guide\n---\n# X\n\n`../../`\n")
+
+        val run = run("check", "--repo=${repo.path}")
+        assertEquals(0, run.code, run.toString())
+        assertEquals(
+            "okf check OK: 3 documents with frontmatter validated, 7 code references checked (1 warnings; --refs-strict fails on them).",
+            run.out.trim(),
+        )
+        assertEquals(
+            listOf("OKF WARNING: guide.md:6: `app/Gone.kt`: file not found in the repo"),
+            run.err.trim().lines().map { it.substringBefore(" — fix the path") },
+        )
+    }
+
+    @Test
     fun `check reports a stale index with the configured index_command`() {
         val run = run("check", "--repo=${repo.path}")
         assertEquals(1, run.code, run.toString())

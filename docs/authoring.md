@@ -208,9 +208,11 @@ A code-span path resolves as follows; the first match wins:
 5. A path whose first segment (after any `.` or `..` segments) is a repository in `external_repos`: it points to that
    repository and is not checked here; `okf xcheck` checks it when that repository belongs to the federation
    ([reference.md](reference.md#cross-repo-check-xcheck)).
-6. A path that Git's ignore rules exclude (`.gitignore`, `.git/info/exclude`, the global excludes file; build output,
+6. A directory path that names the repository root itself, such as `../../` in a subdirectory of a docs root `docs`:
+   the root always exists, so the path resolves.
+7. A path that Git's ignore rules exclude (`.gitignore`, `.git/info/exclude`, the global excludes file; build output,
    for example): skipped.
-7. Otherwise, the file or directory is not found.
+8. Otherwise, the file or directory is not found.
 
 A path end of two or more segments (step 4) must match exactly one file or directory; with several, the finding asks
 to qualify the path. A single segment, a bare file name, only needs to exist somewhere. A path below the source roots
@@ -223,7 +225,8 @@ or an open range, is reported as an invalid line reference once the file is foun
 found.
 
 The files that exist are the ones git knows in the work tree: tracked files, and untracked files that are not
-ignored. A directory exists through the files below it, so an empty directory does not.
+ignored. A directory exists through the files below it, so an empty directory does not. The repository root itself
+always exists: for code spans at step 6, and as a link target ([Links](#links)).
 
 ### Links
 
@@ -234,10 +237,9 @@ in parentheses, are not recognised and so not checked:
 - The part of the target before `#` or `?` is taken. A target that is then empty (a link to an anchor), starts with
   `/` or has a scheme (`https:`, `mailto:`) is skipped. Percent escapes such as `%20` are decoded.
 - The target resolves against the document's directory only, as a rendered page resolves it. A target that leaves
-  the repository is not checked. Otherwise it must be an existing file or directory, of any kind; a missing target is
-  a finding unless Git's ignore rules exclude it. Do not link the repository root itself (`..` from the docs root):
-  `okf check` cannot check that link and stops with a git error. Link a file there, such as `README.md`. A code span
-  that names the repository root as a directory (`../../` in a subdirectory of the docs root) stops it the same way.
+  the repository is not checked. Otherwise it must be an existing file or directory, of any kind; the repository
+  root itself (for example `..` from a docs root `docs`) is one. A missing target is a finding unless Git's ignore
+  rules exclude it.
 - Anchors are not checked. Reference-style links and autolinks are not recognised, so they are not checked either.
 
 ### Findings
