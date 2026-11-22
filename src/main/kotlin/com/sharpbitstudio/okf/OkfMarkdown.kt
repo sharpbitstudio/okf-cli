@@ -24,9 +24,16 @@ object OkfMarkdown {
     /** Parenthesis nesting depth a bare link destination may use (CommonMark: balanced parentheses). */
     private const val DEST_PAREN_DEPTH = 3
 
-    /** A bare link destination: no whitespace, parentheses only balanced (`foo(bar).md`), up to [DEST_PAREN_DEPTH] deep. */
+    /**
+     * A bare link destination: no whitespace, parentheses only balanced (`foo(bar).md`), up to [DEST_PAREN_DEPTH] deep,
+     * of any length. The repetitions are possessive (`*+`, `++`): java.util.regex repeats a group greedily by
+     * recursion, one level per repetition, so a long destination (an inline base64 image) overflowed the stack; a
+     * possessive repetition runs as a loop. It matches what a greedy one would: a destination splits into characters
+     * and balanced groups in one way only, and what follows it in [INLINE_LINK] starts with whitespace or `)`, which
+     * never comes where a shorter split would end.
+     */
     private val BARE_DEST = (1..DEST_PAREN_DEPTH)
-        .fold("""[^()\s]""") { inner, _ -> """(?:[^()\s]|\($inner*\))""" } + "+"
+        .fold("""[^()\s]""") { inner, _ -> """(?:[^()\s]|\($inner*+\))""" } + "++"
 
     /**
      * Inline link or image `[text](target "title")`; group 1 is the `[text]`, group 2 the target, bare or in `<…>`.

@@ -44,6 +44,14 @@
   and the run reports its other findings as usual. Every path git can check gets the same answer as before.
   `OkfGit.ignored` no longer returns the parts of a path split at a NUL, and on POSIX git's input and output files are
   readable by their owner only.
+- Fix: `okf check` and `okf xcheck` no longer stop with a `StackOverflowError` (a Java stack trace and exit `1`) on a
+  Markdown link or image, or text that starts like one, where `[text](` is followed by a long run of characters
+  without whitespace: a bare target such as an inline base64 image (`![logo](data:image/png;base64,…)`) or a long
+  encoded-diagram or query URL, and also an unclosed `<` (`[x](<…)`) or a `<…>` target followed by a malformed title
+  (`[x](<…> "title)`). The crash was observed from about 1,200 characters with the default Java stack; the limit
+  depended on the stack size. Such a link is now read like a short one: `okf check` skips a target with a scheme
+  (`data:`, `https:`) and checks a relative one, `okf xcheck` checks the code references on the same line, and both
+  report their other findings as usual. Every link that was read before is read the same way.
 
 ## 1.0.0 — 2026-11-17
 
