@@ -7,8 +7,16 @@ import java.io.IOException
  * The only place the OKF tooling runs external processes.
  */
 object OkfGit {
-    /** Environment removed from every git call (plus `GIT_TRACE*`): repo selection and injected config. */
-    private val ISOLATED_ENV = setOf("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_CONFIG_COUNT", "GIT_CONFIG_PARAMETERS")
+    /**
+     * Environment removed from every git call (plus `GIT_TRACE*`): repo selection, injected config, and the pathspec
+     * variables (`GIT_LITERAL_PATHSPECS`, `GIT_GLOB_PATHSPECS`, `GIT_NOGLOB_PATHSPECS`, `GIT_ICASE_PATHSPECS`), which
+     * make `git check-ignore` reject every path and can change which commits `git log` finds for okf's `:(literal)`
+     * paths. Names are matched ignoring case, as Windows treats them (Git for Windows reads `git_literal_pathspecs`).
+     */
+    private val ISOLATED_ENV = setOf(
+        "GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_CONFIG_COUNT", "GIT_CONFIG_PARAMETERS",
+        "GIT_LITERAL_PATHSPECS", "GIT_GLOB_PATHSPECS", "GIT_NOGLOB_PATHSPECS", "GIT_ICASE_PATHSPECS",
+    )
 
     /** `git rev-parse` stderr fragments meaning "[workTreeRoot] has no work tree here" (outside a repository, inside `.git`). */
     private val NOT_A_WORK_TREE = listOf("not a git repository", "must be run in a work tree")
@@ -114,8 +122,11 @@ object OkfGit {
         try {
             val process = try {
                 val builder = ProcessBuilder(listOf("git") + args).directory(repoDir).redirectOutput(out).redirectError(err)
-                // Repository selection follows repoDir only; injected config and trace output cannot leak in.
-                builder.environment().keys.removeIf { it in ISOLATED_ENV || it.startsWith("GIT_TRACE") }
+                // Repository selection follows repoDir only; injected config, trace output and pathspec modes cannot
+                // leak in.
+                builder.environment().keys.removeIf { name ->
+                    ISOLATED_ENV.any { it.equals(name, ignoreCase = true) } || name.startsWith("GIT_TRACE", ignoreCase = true)
+                }
                 builder.environment().putAll(env)
                 builder.start()
             } catch (e: IOException) {

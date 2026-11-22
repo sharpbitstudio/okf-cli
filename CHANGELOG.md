@@ -24,6 +24,13 @@
   line part of a code span, or a file name, and split the `OKF WARNING:` line or put a NUL or a terminal escape
   sequence into the console output, the annotations and the `okf xcheck` report. Only findings that contain such a
   character change.
+- Fix: okf runs git without `GIT_LITERAL_PATHSPECS`, `GIT_GLOB_PATHSPECS`, `GIT_NOGLOB_PATHSPECS` and
+  `GIT_ICASE_PATHSPECS` (which options such as `git --literal-pathspecs` set for the commands git starts). With one
+  of them enabled, `okf check` and `okf xcheck` stopped with `git check-ignore failed (exit 128)`, and with
+  `GIT_LITERAL_PATHSPECS` `okf impact` found no commits touching a file, so a document could count as updated
+  although code it covers changed after it, and `okf xcheck` skipped the drift check. The variables okf removes from
+  git's environment are now matched ignoring case, as Windows treats environment names (`git_dir` reached git on
+  Windows before).
 
 ## 1.0.0 — 2026-11-17
 
