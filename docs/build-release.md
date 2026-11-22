@@ -101,7 +101,11 @@ The job names `Build + test` and `OKF docs bundle check (+ docs impact)` are the
 on `main`; renaming a job means updating the ruleset in the same step. On a pull request from a branch of this repo
 the `pull_request` run's jobs are skipped and never carry these names, so a skipped job can never satisfy a required
 check; these checks come from the branch's push run (or a manual run on the branch). On a fork pull request they come
-from the `pull_request` run.
+from the `pull_request` run. If the pull request's author, or the user who triggered its `pull_request` event, is an
+external contributor (not an owner or member of this repository), that run and the pull request's `e2e` run start
+only once someone with write access approves them: the repository setting "Approval for running fork pull request
+workflows from contributors" is "Require approval for all external contributors" (like the `main` ruleset, it is not
+part of this tree).
 
 A newer push to the same branch cancels a still-running build of it, except on `main`.
 
