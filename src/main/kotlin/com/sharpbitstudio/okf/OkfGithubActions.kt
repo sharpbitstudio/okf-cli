@@ -2,7 +2,11 @@ package com.sharpbitstudio.okf
 
 /**
  * GitHub Actions workflow commands: printed on stdout during a run, `::warning …::` / `::error …::`
- * lines become annotations on the offending file line (and in the PR diff). Shared by the OKF commands.
+ * lines become annotations. [annotation] writes the optional `file` (repo-relative) and `line`
+ * properties: a code-reference finding of `okf check` names the document and the line of the
+ * reference, an `okf impact` finding the document and line 1; an impact finding without a document and
+ * the warning that the impact check was skipped (no base or merge-base) name neither. GitHub places an
+ * annotation on a file only when that path matches the checkout. Shared by the OKF commands.
  */
 object OkfGithubActions {
     /** Whether the tool runs under GitHub Actions. */
