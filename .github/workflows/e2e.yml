@@ -26,8 +26,8 @@ permissions:
 # The launcher (launcher/okfw, launcher/okfw.cmd; docs/launcher.md) on the three runner systems: the whole test suite
 # (the hermetic launcher tests run the script under each system's sh: dash, macOS /bin/sh, Git for Windows' sh.exe,
 # and okfw.cmd under cmd and PowerShell on Windows) plus `networkTest`, which downloads the latest published release
-# (1.0.0) with real curl and runs okfw --verify / --update against it with the runner's gh and git (also --update from
-# the previous release, 1.0.0-rc.1, to it, and --update of 1.0.0-alpha.1, a release without okf wrapper; on GitHub
+# (1.0.1) with real curl and runs okfw --verify / --update against it with the runner's gh and git (also --update from
+# the previous release, 1.0.0, to it, and --update of 1.0.0-alpha.1, a release without okf wrapper; on GitHub
 # Actions a missing gh or one older than the launcher's floor fails those cases). The GitHub Action (action.yml,
 # docs/github-actions.md) runs as `uses: ./` against fixture repositories on the same three systems (with
 # verify-provenance on the published release; on ubuntu also release.yml's attestation check of it) and once as a
@@ -135,7 +135,7 @@ jobs:
   action:
     # The GitHub Action of this commit (`uses: ./`) against fixture repositories: a bundle `init` wrote with this
     # commit's jar (built as a release-like version, so the pin names it; the cache is seeded with it), clean and with
-    # an undocumented code change, and a bundle pinned to the latest published release (1.0.0), which the launcher
+    # an undocumented code change, and a bundle pinned to the latest published release (1.0.1), which the launcher
     # downloads and checks with okfw --verify (the runner's gh); then the same bundle, its cached jar removed, with the
     # action of the commit that release was built from, as a consumer references it. On ubuntu, release.yml's tokenless
     # attestation check also runs on that release.
@@ -241,7 +241,7 @@ jobs:
           mkdir -p "$cache"
           cp "$jar" "$cache/okf-cli-0.0.0-e2e.1-all.jar"
 
-          # (c): a bundle pinned to the published 1.0.0, with a minimal okf.yaml, an origin/main and no cached jar.
+          # (c): a bundle pinned to the published 1.0.1, with a minimal okf.yaml, an origin/main and no cached jar.
           release="$RUNNER_TEMP/fixture-release"
           git init -q "$release"
           git -C "$release" symbolic-ref HEAD refs/heads/main
@@ -249,14 +249,14 @@ jobs:
             > "$release/okf.yaml"
           mkdir -p "$release/docs"
           printf '%s\n' '---' 'okf_version: "0.2"' '---' '# fixture-release docs' > "$release/docs/index.md"
-          printf '%s\n' 'version=1.0.0' 'sha256=8e34a049720d05181510b91aa778dd95b9a4399a483dd774f9068cc22fc40012' \
+          printf '%s\n' 'version=1.0.1' 'sha256=a54e6bb0ef3c0548c0b81c628608a664a363ba15c28a6035c6545c1b6a933a00' \
             > "$release/okf-wrapper.properties"
           git -C "$release" add -A
-          git -C "$release" commit -q -m 'Fixture pinned to 1.0.0'
+          git -C "$release" commit -q -m 'Fixture pinned to 1.0.1'
           git init -q --bare "$RUNNER_TEMP/fixture-release-origin.git"
           git -C "$release" remote add origin "$RUNNER_TEMP/fixture-release-origin.git"
           git -C "$release" push -q -u origin main
-          rm -rf "$RUNNER_TEMP/okf-cli-cache/okf-cli/1.0.0"
+          rm -rf "$RUNNER_TEMP/okf-cli-cache/okf-cli/1.0.1"
 
       - name: (a) Action on a clean bundle
         id: clean
@@ -319,7 +319,7 @@ jobs:
           test "$STRICT" = failure
           test "$LENIENT" = success
 
-      - name: (c) Action on a bundle pinned to 1.0.0 (downloads the release; okfw --verify, check and impact)
+      - name: (c) Action on a bundle pinned to 1.0.1 (downloads the release; okfw --verify, check and impact)
         id: release
         uses: ./
         with:
@@ -334,21 +334,21 @@ jobs:
           VERSION: ${{ steps.release.outputs.version }}
         run: |
           echo "version output: $VERSION"
-          test "$VERSION" = 1.0.0
-          test -f "$RUNNER_TEMP/okf-cli-cache/okf-cli/1.0.0/okf-cli-1.0.0-all.jar"
+          test "$VERSION" = 1.0.1
+          test -f "$RUNNER_TEMP/okf-cli-cache/okf-cli/1.0.1/okf-cli-1.0.1-all.jar"
 
-      - name: (c) Remove the cached 1.0.0 jar
+      - name: (c) Remove the cached 1.0.1 jar
         shell: bash
         run: |
-          rm -rf "$RUNNER_TEMP/okf-cli-cache/okf-cli/1.0.0"
-          test ! -e "$RUNNER_TEMP/okf-cli-cache/okf-cli/1.0.0"
+          rm -rf "$RUNNER_TEMP/okf-cli-cache/okf-cli/1.0.1"
+          test ! -e "$RUNNER_TEMP/okf-cli-cache/okf-cli/1.0.1"
 
       # The action as a consumer runs it: from the runner's `_actions/` download of that commit of this repository, not
       # from the checkout. The commit is the one the latest release was built from; after each release the line moves to
       # that release's commit, by hand (Dependabot ignores this repository's own actions, .github/dependabot.yml).
-      - name: (c) The action of the 1.0.0 commit, as a consumer references it, on the same bundle
+      - name: (c) The action of the 1.0.1 commit, as a consumer references it, on the same bundle
         id: consumer
-        uses: sharpbitstudio/okf-cli@4c3d6dc7c0082083590768483b4d46c6269164af # 1.0.0
+        uses: sharpbitstudio/okf-cli@b76680bb3c09d9638ccda4f50db1c091fecbc23a # 1.0.1
         with:
           repo: ${{ runner.temp }}/fixture-release
           base: origin/main
@@ -361,18 +361,18 @@ jobs:
           VERSION: ${{ steps.consumer.outputs.version }}
         run: |
           echo "version output: $VERSION"
-          test "$VERSION" = 1.0.0
-          test -f "$RUNNER_TEMP/okf-cli-cache/okf-cli/1.0.0/okf-cli-1.0.0-all.jar"
+          test "$VERSION" = 1.0.1
+          test -f "$RUNNER_TEMP/okf-cli-cache/okf-cli/1.0.1/okf-cli-1.0.1-all.jar"
 
       # The command of release.yml's "Verify the attestation" (keep the two in step), tokenless and with the runner's
       # gh as in a release run, on the latest published release and its Sigstore bundle: it passes with the commit that
       # release was built from and fails with another commit (its parent). Once, on ubuntu.
-      - name: (c) The release workflow's attestation check on 1.0.0
+      - name: (c) The release workflow's attestation check on 1.0.1
         if: runner.os == 'Linux'
         shell: bash
         run: |
           set -euo pipefail
-          VERSION=1.0.0
+          VERSION=1.0.1
           cd "$(mktemp -d "$RUNNER_TEMP/release-verify.XXXXXX")"
           for file in "okf-cli-$VERSION-all.jar" "okf-cli-$VERSION-all.jar.sha256" "okf-cli-$VERSION-all.jar.sigstore.json"; do
             curl -q -fsSLO "https://github.com/sharpbitstudio/okf-cli/releases/download/v$VERSION/$file"
@@ -391,10 +391,10 @@ jobs:
               --source-digest "$1"
           }
           gh --version
-          release_verify 4c3d6dc7c0082083590768483b4d46c6269164af
+          release_verify b76680bb3c09d9638ccda4f50db1c091fecbc23a
           # Control: the parent of that commit. gh's output stays in the log, so its reason can be read there.
           echo "Control, expected to fail with a source digest mismatch:"
-          if release_verify 8b7ba9b573455ae1cb3b252cb948cf25a6998f73; then
+          if release_verify 7861c808e461194960900f8f0046620fdac1c898; then
             echo "::error::the attestation check passed with a commit the release was not built from"
             exit 1
           fi
@@ -406,7 +406,7 @@ jobs:
     # reference. A last run clones this repository anonymously (`token: ''`) into an empty workspace: the clone
     # settings (credential helpers off, no prompts) must not get in the way of a public clone, and okf xcheck then
     # stops with a setup error (exit 2), since the hub's satellites are not there. A clean run then pins the hub to the
-    # latest published release (1.0.0) with an empty cache, so the action downloads a real release, and a last one
+    # latest published release (1.0.1) with an empty cache, so the action downloads a real release, and a last one
     # repeats it with the xcheck action of the commit that release was built from, as a consumer references it. The
     # token path itself is covered by XcheckActionTest (Basic auth over local HTTP). Skipped on a same-repo PR as above.
     name: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && 'Skipped on same-repo PR (see push run) - xcheck action' || 'xcheck action' }}
@@ -555,21 +555,21 @@ jobs:
           test -z "$(git -C "$clone" tag)"
           ! grep -Eiq 'extraheader|x-access-token|helper' "$clone/.git/config"
 
-      - name: Pin the hub to 1.0.0, with no cached jar
+      - name: Pin the hub to 1.0.1, with no cached jar
         shell: bash
         run: |
           set -eu
           export GIT_CONFIG_GLOBAL="$RUNNER_TEMP/fixture-gitconfig" GIT_CONFIG_NOSYSTEM=1
           git -C "$RUNNER_TEMP/xcheck-workspace/sat-a" checkout -- docs/NOTE.md
           hub="$RUNNER_TEMP/xcheck-hub"
-          printf '%s\n' 'version=1.0.0' 'sha256=8e34a049720d05181510b91aa778dd95b9a4399a483dd774f9068cc22fc40012' \
+          printf '%s\n' 'version=1.0.1' 'sha256=a54e6bb0ef3c0548c0b81c628608a664a363ba15c28a6035c6545c1b6a933a00' \
             > "$hub/okf-wrapper.properties"
           git -C "$hub" add -A
           git -C "$hub" -c user.name=e2e -c user.email=e2e@example.invalid -c commit.gpgsign=false \
-            commit -q -m 'Pin 1.0.0'
-          test ! -e "$RUNNER_TEMP/okf-cli-cache/okf-cli/1.0.0"
+            commit -q -m 'Pin 1.0.1'
+          test ! -e "$RUNNER_TEMP/okf-cli-cache/okf-cli/1.0.1"
 
-      - name: Clean federation with the hub pinned to 1.0.0 (downloads the release)
+      - name: Clean federation with the hub pinned to 1.0.1 (downloads the release)
         id: release
         uses: ./xcheck
         with:
@@ -577,7 +577,7 @@ jobs:
           satellites: ''
           workspace: ${{ runner.temp }}/xcheck-workspace
 
-      - name: The 1.0.0 run's outputs - exit code 0, no report; the release is in the cache
+      - name: The 1.0.1 run's outputs - exit code 0, no report; the release is in the cache
         shell: bash
         env:
           EXIT_CODE: ${{ steps.release.outputs.exit-code }}
@@ -587,21 +587,21 @@ jobs:
           test "$EXIT_CODE" = 0
           test "$REPORT" = "$RUNNER_TEMP/okf-xcheck-report.md"
           test ! -e "$REPORT"
-          jar="$RUNNER_TEMP/okf-cli-cache/okf-cli/1.0.0/okf-cli-1.0.0-all.jar"
-          test "$(sha256sum "$jar" | cut -d ' ' -f 1)" = 8e34a049720d05181510b91aa778dd95b9a4399a483dd774f9068cc22fc40012
+          jar="$RUNNER_TEMP/okf-cli-cache/okf-cli/1.0.1/okf-cli-1.0.1-all.jar"
+          test "$(sha256sum "$jar" | cut -d ' ' -f 1)" = a54e6bb0ef3c0548c0b81c628608a664a363ba15c28a6035c6545c1b6a933a00
 
-      - name: Remove the cached 1.0.0 jar
+      - name: Remove the cached 1.0.1 jar
         shell: bash
         run: |
-          rm -rf "$RUNNER_TEMP/okf-cli-cache/okf-cli/1.0.0"
-          test ! -e "$RUNNER_TEMP/okf-cli-cache/okf-cli/1.0.0"
+          rm -rf "$RUNNER_TEMP/okf-cli-cache/okf-cli/1.0.1"
+          test ! -e "$RUNNER_TEMP/okf-cli-cache/okf-cli/1.0.1"
 
       # The xcheck action as a consumer runs it: from the runner's `_actions/` download of the commit the latest release
       # was built from, where xcheck.sh finds the launcher beside its own directory. After each release the line moves
       # to that release's commit, by hand (Dependabot ignores this repository's own actions, .github/dependabot.yml).
-      - name: The xcheck action of the 1.0.0 commit, as a consumer references it, on the same federation
+      - name: The xcheck action of the 1.0.1 commit, as a consumer references it, on the same federation
         id: consumer
-        uses: sharpbitstudio/okf-cli/xcheck@4c3d6dc7c0082083590768483b4d46c6269164af # 1.0.0
+        uses: sharpbitstudio/okf-cli/xcheck@b76680bb3c09d9638ccda4f50db1c091fecbc23a # 1.0.1
         with:
           hub: ${{ runner.temp }}/xcheck-hub
           satellites: ''
@@ -617,5 +617,5 @@ jobs:
           test "$EXIT_CODE" = 0
           test "$REPORT" = "$RUNNER_TEMP/okf-xcheck-report.md"
           test ! -e "$REPORT"
-          jar="$RUNNER_TEMP/okf-cli-cache/okf-cli/1.0.0/okf-cli-1.0.0-all.jar"
-          test "$(sha256sum "$jar" | cut -d ' ' -f 1)" = 8e34a049720d05181510b91aa778dd95b9a4399a483dd774f9068cc22fc40012
+          jar="$RUNNER_TEMP/okf-cli-cache/okf-cli/1.0.1/okf-cli-1.0.1-all.jar"
+          test "$(sha256sum "$jar" | cut -d ' ' -f 1)" = a54e6bb0ef3c0548c0b81c628608a664a363ba15c28a6035c6545c1b6a933a00

@@ -61,12 +61,12 @@ point at it) and a recording proxy, neither of which may receive the token, and 
 action's own arguments against a list of URLs; sentinels (a global credential helper, a global URL-scoped one,
 `core.askPass`, `SSH_ASKPASS`, and a credential helper and `core.askPass` set through `GIT_CONFIG_COUNT`) must never
 be called. A `git` wrapper first on the `PATH` logs every git command line.
-`networkTest` runs only the `network` tests: `okfw` downloads the published `1.0.0` with real `curl` and runs it, and
-`okfw --verify` / `okfw --update` check its build provenance with the real `gh`. `okfw --update 1.0.0` runs in a git
+`networkTest` runs only the `network` tests: `okfw` downloads the published `1.0.1` with real `curl` and runs it, and
+`okfw --verify` / `okfw --update` check its build provenance with the real `gh`. `okfw --update 1.0.1` runs in a git
 work tree with the real `git`: it writes the pin, the release's `okf wrapper` writes the launcher files, and after a
 commit a second `--update` reports the release as already pinned and leaves the work tree clean; a download changed
 by one byte fails the provenance check and leaves the pin unchanged. In a work tree that pins the previous release,
-`1.0.0-rc.1`, `okfw --update 1.0.0` pins the new one and changes only the pin, since both releases carry the same
+`1.0.0`, `okfw --update 1.0.1` pins the new one and changes only the pin, since both releases carry the same
 launcher files. `okfw --update 1.0.0-alpha.1`, a published release without `okf wrapper`, writes the pin and exits
 3 because the launcher files could not be written. The `gh` cases are skipped where `gh` is missing or older than
 2.102.0, except on GitHub Actions, where that fails them. `networkTest` is not part of `check`; the `e2e` workflow
@@ -133,10 +133,10 @@ this repo and its own concurrency group. Its jobs are not required checks:
   unreachable-base path (a non-strict skip with a warning annotation); on other events it exercises the real
   selection (for a fork pull request the job pushes the fixture's `main` as the pull request's base branch, so
   `origin/<base branch>` exists). The job also checks that the event names the default branch. A third fixture,
-  with an `origin/main`, pins the published `1.0.0`, which the action downloads from the release, checks
+  with an `origin/main`, pins the published `1.0.1`, which the action downloads from the release, checks
   with `verify-provenance` (`okfw --verify` with the runner's `gh`) and runs `check` and `impact` with. Then, with
   that jar removed from the cache, the same fixture runs through the action as a consumer references it,
-  `uses: sharpbitstudio/okf-cli@<commit>` with the commit `1.0.0` was built from, so the runner downloads the
+  `uses: sharpbitstudio/okf-cli@<commit>` with the commit `1.0.1` was built from, so the runner downloads the
   action from this repository instead of using the checkout; it downloads the release again. After each release the
   step moves to that release's commit, by hand (see [Dependency updates](#dependency-updates)). On `ubuntu-latest`
   the job also runs the release workflow's attestation check (see [Release](#release)) as written there, tokenless,
@@ -151,10 +151,10 @@ this repo and its own concurrency group. Its jobs are not required checks:
   (`token: ''`) into an empty workspace, which shows that the clone settings (credential helpers off, no prompts)
   do not get in the way of a public clone; `okf xcheck` then stops with a setup error (`exit-code` `2`), since the
   hub's satellites are missing there. A further run repairs the satellite and pins the hub to the published
-  `1.0.0` with no cached jar, so the action downloads the release: it passes (`exit-code` `0`, no report) and
+  `1.0.1` with no cached jar, so the action downloads the release: it passes (`exit-code` `0`, no report) and
   leaves the jar in the cache with the release's SHA-256. The last run repeats that, with the cached jar removed,
   through the xcheck action as a consumer references it, `uses: sharpbitstudio/okf-cli/xcheck@<commit>` with the
-  commit `1.0.0` was built from (moved like the Action's consumer step above).
+  commit `1.0.1` was built from (moved like the Action's consumer step above).
 
 ## Release
 

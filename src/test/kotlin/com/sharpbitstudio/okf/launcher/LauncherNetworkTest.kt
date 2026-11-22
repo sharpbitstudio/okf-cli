@@ -235,12 +235,12 @@ class LauncherNetworkTest {
 
     private companion object {
         /** The latest published release. */
-        const val VERSION = "1.0.0"
-        const val SHA256 = "8e34a049720d05181510b91aa778dd95b9a4399a483dd774f9068cc22fc40012"
+        const val VERSION = "1.0.1"
+        const val SHA256 = "a54e6bb0ef3c0548c0b81c628608a664a363ba15c28a6035c6545c1b6a933a00"
 
         /** The published release before [VERSION]: the starting point of the update case. */
-        const val PREVIOUS_VERSION = "1.0.0-rc.1"
-        const val PREVIOUS_SHA256 = "5ce703dada54b6a802ce2309ffc13aa8cffb456e7f4d27dbe20be0b7848d6983"
+        const val PREVIOUS_VERSION = "1.0.0"
+        const val PREVIOUS_SHA256 = "8e34a049720d05181510b91aa778dd95b9a4399a483dd774f9068cc22fc40012"
 
         /** A published release without `okf wrapper`. */
         const val ALPHA_VERSION = "1.0.0-alpha.1"
