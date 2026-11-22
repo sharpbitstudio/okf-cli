@@ -159,6 +159,41 @@ class OkfXcheckCliTest {
     }
 
     @Test
+    fun `a reference into a satellite's submodule is a broken reference, not a stop`() {
+        val inner = satA.resolve("inner").apply { mkdirs() }
+        git(inner, "init", "-q")
+        write(inner, "README.md", "inner\n")
+        git(inner, "add", "README.md")
+        git(inner, "-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "commit", "-q", "-m", "inner")
+        git(satA, "add", "inner")
+        write(satA, ".gitignore", "/generated/\n")
+        write(hub, "docs/guide.md", "---\ntype: Guide\n---\n# G\n\n`sat-a/inner/README.md` `sat-a/lib/gone.kt` `sat-a/generated/Gen.kt`\n")
+        commit(satA, "submodule", DAY_0)
+        commit(hub, "guide", DAY_0)
+
+        val run = xcheck()
+        assertEquals(1, run.code, run.toString())
+        val notFound = "file not found in sat-a — fix the path, or opt the line out with `<!-- okf: ignore-refs -->`"
+        assertEquals(
+            listOf(
+                "okf xcheck found 2 problem(s):",
+                "  - hub/docs/guide.md:6: `sat-a/inner/README.md`: $notFound",
+                "  - hub/docs/guide.md:6: `sat-a/lib/gone.kt`: $notFound",
+            ),
+            run.err.trim().lines(),
+        )
+        assertEquals(
+            "okf xcheck: 3 repos checked, 7 cross-repo references checked (2 broken), 1 references to non-federated repos not checked, " +
+                "2 Satellite Notes linked to 1 Feature Records; 2 problem(s), 0 warning(s).",
+            run.out.trim(),
+        )
+        val text = report.readText()
+        assertEquals(listOf("## (a) Cross-repo references"), text.lines().filter { it.startsWith("## ") })
+        assertTrue("\n- hub/docs/guide.md:6: `sat-a/inner/README.md`: $notFound\n" in text, text)
+        assertTrue("\n- hub/docs/guide.md:6: `sat-a/lib/gone.kt`: $notFound\n" in text, text)
+    }
+
+    @Test
     fun `drift of more than 14 days is a warning - exit 0, report written`() {
         write(satA, "docs/invite/NOTE.md", note(body = "Changed.\n"))
         commit(satA, "note changed", DAY_0 + 15 * DAY)
