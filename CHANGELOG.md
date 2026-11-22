@@ -14,6 +14,11 @@
   from a mirror or behind such a proxy: check them out into `<workspace>/<repo>` before the action. The clone's log
   line now reads
   `okf-cli xcheck action: git -c credential.helper= -c core.askPass= -c credential.useHttpPath=true -c 'credential.<server>.helper=!sh "$GITHUB_ACTION_PATH/credential.sh"' clone --no-tags -- <url> <directory>`.
+- Fix: `okf check` no longer stops with `git check-ignore failed (exit 128)` on a reference to the repository root
+  itself: a Markdown link such as `[top](../)` from `docs/x.md`, or a directory code span such as `../../` in
+  `docs/sub/x.md`. The root counts as an existing directory, so the reference resolves and is counted like any other,
+  and the run reports its other findings as usual. Called through the Kotlin API without a git ignore lookup,
+  `OkfRefChecker` reported such a reference as not found; it resolves there too.
 
 ## 1.0.0 — 2026-11-17
 

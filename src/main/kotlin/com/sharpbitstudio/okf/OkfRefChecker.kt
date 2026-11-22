@@ -41,12 +41,13 @@ internal data class SiblingCheckResult(val findings: List<Pair<SiblingRef, Strin
  * A code-span path resolves, first match wins: repo root → relative to the document (a path that
  * leaves the repo is skipped) → a source/package root ([RepoIndex.packageRoots]) → a unique path
  * suffix anywhere in the repo (a single segment = the basename exists somewhere) → a sibling repo
- * written as `<repo>/<path>` ([externalRepos], skipped) → a gitignored path (build output,
- * skipped) → not found. A suffix of two or more segments must match a single file or directory
- * (several candidates = "qualify the path"); a single segment only needs to exist, and a
- * package-relative path may exist under several roots (main + test = one package) — unless it
- * carries a line number, which always needs a unique file. Markdown links resolve relative to the
- * document only (as rendered).
+ * written as `<repo>/<path>` ([externalRepos], skipped) → the repository root itself (it exists,
+ * though no indexed file names it) → a gitignored path (build output, skipped) → not found. A suffix
+ * of two or more segments must match a single file or directory (several candidates = "qualify the
+ * path"); a single segment only needs to exist, and a package-relative path may exist under several
+ * roots (main + test = one package) — unless it carries a line number, which always needs a unique
+ * file. Markdown links resolve relative to the document only (as rendered); the repository root
+ * itself counts as an existing directory.
  *
  * `okf xcheck` reuses both halves across repositories: [siblingRefs] yields the references this repo's [check]
  * skips as sibling-repo references, and [checkSiblingRefs] on the checker of the target repo resolves them there.
@@ -237,7 +238,8 @@ class OkfRefChecker(
             val resolved = normalize(join(docDir, ref.target.trimEnd('/')))
             when {
                 resolved == null -> Outcome.Ok // leaves the repo: a sibling checkout, not checkable here
-                index.isFile(resolved) || index.isDir(resolved) -> Outcome.Ok
+                // `""` is the repository root itself: it exists, though no indexed file names it.
+                resolved.isEmpty() || index.isFile(resolved) || index.isDir(resolved) -> Outcome.Ok
                 else -> Outcome.Unresolved("link target `${ref.target}` not found (resolved against the document: $resolved)", listOf(resolved))
             }
         }
@@ -307,6 +309,9 @@ class OkfRefChecker(
         if (repoAt >= 0 && segments[repoAt] in externalRepos) {
             return Resolution.Sibling(segments[repoAt], segments.drop(repoAt + 1).joinToString("/"))
         }
+        // The repository root itself (`../../` from `docs/sub/`; only a directory span can normalise to it): it exists,
+        // though no indexed file names it, and git cannot be asked whether it is ignored.
+        if (fromRoot == "" || fromDoc == "") return Resolution.Found(listOf(""))
         // A directory is probed through a child path: dir-only rules (`build/`) then match its parent,
         // and git's odd match of any trailing-slash path against a blank line of a CRLF .gitignore is avoided.
         return Resolution.Missing(listOfNotNull(fromRoot, fromDoc).distinct().map { if (ref.dir) "$it/$DIR_PROBE" else it })

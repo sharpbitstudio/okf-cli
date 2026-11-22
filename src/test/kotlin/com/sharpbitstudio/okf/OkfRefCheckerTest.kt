@@ -364,6 +364,73 @@ class OkfRefCheckerTest {
         )
     }
 
+    @Test
+    fun `a link to the repository root resolves, without probing git for it`() {
+        val calls = mutableListOf<Collection<String>>()
+        val checker = OkfRefChecker(index, "docs") { paths -> calls += paths; emptySet() }
+        val result = checker.check(
+            listOf(
+                doc("guide.md", "[a](../) [b](..) [c](./..) [d](../#top) [e](../?x=1) [f](%2e%2e/) [g](%2F..) [h](../docs/..)\n"),
+                doc("adr/ADR-001-test.md", "[i](../../) [gone](../features/gone.md)\n"),
+            ),
+        )
+        assertMessages(result.findings, "link target `../features/gone.md` not found (resolved against the document: docs/features/gone.md)")
+        assertEquals(10, result.checked)
+        assertEquals(listOf(listOf("docs/features/gone.md")), calls.map { it.toList() }, "one lookup, nothing for the root")
+    }
+
+    @Test
+    fun `a directory span naming the repository root resolves, without probing git for it`() {
+        val calls = mutableListOf<Collection<String>>()
+        val checker = OkfRefChecker(index, "docs") { paths -> calls += paths; emptySet() }
+        val result = checker.check(
+            listOf(
+                doc("adr/ADR-001-test.md", "`../../`\n"),
+                // `{../,./}../`: the variant `../../` leaves the repo from docs/, the variant `./../` names the root.
+                doc("guide.md", "`./../` `x/../../` `{../,./}../` `app/gone/`\n"),
+            ),
+        )
+        assertMessages(result.findings, "`app/gone/`: directory not found")
+        assertEquals(6, result.checked)
+        assertEquals(
+            listOf(listOf("app/gone/okf-dir-probe", "docs/app/gone/okf-dir-probe")),
+            calls.map { it.toList() },
+            "one lookup, nothing for the root",
+        )
+    }
+
+    @Test
+    fun `the repository root resolves when the bundle is not in the index`() {
+        val calls = mutableListOf<Collection<String>>()
+        val checker = OkfRefChecker(RepoIndex(listOf("README.md")), "docs") { paths -> calls += paths; emptySet() }
+        val result = checker.check(listOf(doc("guide.md", "`docs/../`\n")))
+        assertMessages(result.findings)
+        assertEquals(1, result.checked)
+        assertEquals(listOf(emptyList<String>()), calls.map { it.toList() }, "one lookup, with nothing to probe")
+    }
+
+    @Test
+    fun `in a bundle at the repository root, dot-only links and directory spans name the root`() {
+        val calls = mutableListOf<Collection<String>>()
+        val checker = OkfRefChecker(index, "") { paths -> calls += paths; emptySet() }
+        val result = checker.check(listOf(doc("x.md", "[a](./) [b](.) `././`\n")))
+        assertMessages(result.findings)
+        assertEquals(3, result.checked)
+        assertEquals(listOf(emptyList<String>()), calls.map { it.toList() }, "one lookup, with nothing to probe")
+    }
+
+    @Test
+    fun `a sibling-repo path that climbs back to the root stays a sibling reference`() {
+        val calls = mutableListOf<Collection<String>>()
+        val checker = OkfRefChecker(index, "docs", externalRepos = setOf("ext")) { paths -> calls += paths; emptySet() }
+        val docs = listOf(doc("guide.md", "`ext/../../`\n"))
+        assertEquals(listOf(Triple("ext", "../..", "ext/../../")), checker.siblingRefs(docs).map { Triple(it.repo, it.path, it.ref.text) })
+        val result = checker.check(docs)
+        assertMessages(result.findings)
+        assertEquals(1, result.checked)
+        assertEquals(listOf(emptyList<String>()), calls.map { it.toList() }, "one lookup, with nothing to probe")
+    }
+
     private fun checker(ignored: Set<String> = emptySet()) =
         OkfRefChecker(index, "docs", externalRepos = HUB_EXTERNAL_REPOS) { paths -> paths.filter { it in ignored }.toSet() }
 
