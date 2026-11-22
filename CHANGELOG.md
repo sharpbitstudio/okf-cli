@@ -19,6 +19,11 @@
   `docs/sub/x.md`. The root counts as an existing directory, so the reference resolves and is counted like any other,
   and the run reports its other findings as usual. Called through the Kotlin API without a git ignore lookup,
   `OkfRefChecker` reported such a reference as not found; it resolves there too.
+- Fix: reference findings show control characters and line separators (U+2028, U+2029) as `\uNNNN`, as `okf init`
+  already does, instead of writing them as they are. They come from a decoded link target (`%00`, `%0A`, `%1B`), the
+  line part of a code span, or a file name, and split the `OKF WARNING:` line or put a NUL or a terminal escape
+  sequence into the console output, the annotations and the `okf xcheck` report. Only findings that contain such a
+  character change.
 
 ## 1.0.0 — 2026-11-17
 

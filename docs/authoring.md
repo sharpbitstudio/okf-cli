@@ -245,7 +245,8 @@ in parentheses, are not recognised and so not checked:
 ### Findings
 
 Code-reference findings are warnings (`OKF WARNING:` lines), and failures with `--refs-strict`; under GitHub Actions
-each one is also an annotation on the line of the reference ([reference.md](reference.md#console-lines)).
+each one is also an annotation on the line of the reference ([reference.md](reference.md#console-lines)). Control
+characters and line separators in a finding, such as a decoded `%0A` in a link target, are shown as `\uNNNN`.
 
 ### Opting out
 

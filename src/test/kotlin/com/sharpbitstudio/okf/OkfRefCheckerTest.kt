@@ -431,6 +431,30 @@ class OkfRefCheckerTest {
         assertEquals(listOf(emptyList<String>()), calls.map { it.toList() }, "one lookup, with nothing to probe")
     }
 
+    @Test
+    fun `control characters in a link target are shown as unicode escapes, the probe keeps them`() {
+        val calls = mutableListOf<Collection<String>>()
+        val checker = OkfRefChecker(index, "docs") { paths -> calls += paths; emptySet() }
+        val body = "[a](a%0Ab.md) [b](gone%00) [c](a%1B.md) [d](a%C2%85.md) [e](a%E2%80%A8b.md) [f](new%20gone.md) [g](100%25.md)\n"
+        val result = checker.check(listOf(doc("guide.md", body)))
+        assertMessages(
+            result.findings,
+            "link target `a\\u000ab.md` not found (resolved against the document: docs/a\\u000ab.md)",
+            "link target `gone\\u0000` not found (resolved against the document: docs/gone\\u0000)",
+            "link target `a\\u001b.md` not found (resolved against the document: docs/a\\u001b.md)",
+            "link target `a\\u0085.md` not found (resolved against the document: docs/a\\u0085.md)",
+            "link target `a\\u2028b.md` not found (resolved against the document: docs/a\\u2028b.md)",
+            "link target `new gone.md` not found (resolved against the document: docs/new gone.md)",
+            "link target `100%.md` not found (resolved against the document: docs/100%.md)",
+        )
+        assertEquals(7, result.checked)
+        assertEquals(
+            listOf(listOf("docs/a\nb.md", "docs/gone\u0000", "docs/a\u001B.md", "docs/a\u0085.md", "docs/a\u2028b.md", "docs/new gone.md", "docs/100%.md")),
+            calls.map { it.toList() },
+            "one lookup, the probes keep the characters",
+        )
+    }
+
     private fun checker(ignored: Set<String> = emptySet()) =
         OkfRefChecker(index, "docs", externalRepos = HUB_EXTERNAL_REPOS) { paths -> paths.filter { it in ignored }.toSet() }
 

@@ -31,10 +31,31 @@ class OkfRefCheckerMessagesTest {
     }
 
     @Test
+    fun `sibling-repo file not found, with a control character in the label escaped`() {
+        val source = OkfRefChecker(RepoIndex(listOf("docs/guide.md")), "docs", externalRepos = setOf("sat-a"))
+        val refs = source.siblingRefs(listOf(doc("`sat-a/lib/Gone.kt:\u001Bx`\n")))
+        val findings = OkfRefChecker(index, "docs").checkSiblingRefs(refs).findings.map { it.second }
+        assertEquals(
+            "`sat-a/lib/Gone.kt:\\u001bx`: file not found in sat-a — fix the path, or opt the line out with `<!-- okf: ignore-refs -->`",
+            findings.joinToString("\n"),
+            "OkfRefChecker#3",
+        )
+    }
+
+    @Test
     fun `link target not found`() {
         assertEquals(
             "guide.md:4: link target `./gone.md` not found (resolved against the document: docs/gone.md)",
             finding("[Gone](./gone.md)\n"),
+            "OkfRefChecker#4",
+        )
+    }
+
+    @Test
+    fun `link target not found, with a control character escaped`() {
+        assertEquals(
+            "guide.md:4: link target `./gone\\u000a.md` not found (resolved against the document: docs/gone\\u000a.md)",
+            finding("[Gone](./gone%0A.md)\n"),
             "OkfRefChecker#4",
         )
     }
@@ -64,6 +85,11 @@ class OkfRefCheckerMessagesTest {
     @Test
     fun `invalid line reference`() {
         assertEquals("guide.md:4: `lib/A.kt:3,`: invalid line reference", finding("`lib/A.kt:3,`\n"), "OkfRefChecker#6")
+    }
+
+    @Test
+    fun `invalid line reference, with a control character in the line part escaped`() {
+        assertEquals("guide.md:4: `lib/A.kt:\\u0001`: invalid line reference", finding("`lib/A.kt:\u0001`\n"), "OkfRefChecker#6")
     }
 
     @Test
