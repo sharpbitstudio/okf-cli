@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.assertAll
 import org.junit.jupiter.api.io.TempDir
 import java.io.ByteArrayOutputStream
 import java.io.File
@@ -111,6 +112,51 @@ class OkfCliTest {
             listOf("OKF WARNING: guide.md:6: `app/Gone.kt`: file not found in the repo"),
             run.err.trim().lines().map { it.substringBefore(" — fix the path") },
         )
+    }
+
+    @Test
+    fun `check and impact run git without the pathspec environment variables`() {
+        run("index", "--repo=${repo.path}")
+        write(".gitignore", "/generated/\n")
+        write("docs/guide.md", "---\ntype: Guide\n---\n# G\n\n`app/Gone.kt` `generated/Gone.kt`\n")
+        commit("base")
+        val base = git("rev-parse", "HEAD")
+        // The ADR is updated together with the code (its body: the generated index stays current), then the code
+        // changes again: impact must see the second change through `git log -- :(literal)<path>`.
+        write("src/main/kotlin/app/App.kt", "package app\n\nfun x() = 1\n")
+        repo.resolve("docs/adr/ADR-001-app.md").appendText("\nUpdated.\n")
+        commit("change app and its ADR")
+        val updatedIn = git("rev-parse", "HEAD").take(7)
+        write("src/main/kotlin/app/App.kt", "package app\n\nfun x() = 2\n")
+        commit("change app again")
+
+        // Each variable on its own; the lower-case name is git's variable on Windows only (its names ignore case).
+        val checks = (PATHSPEC_ENV + "git_literal_pathspecs").associateWith { jar(it, "check", "--repo=${repo.path}") }
+        val impact = jar("GIT_LITERAL_PATHSPECS", "impact", "--repo=${repo.path}", "--base=$base", "--impact-strict")
+        val summary = "okf check OK: 2 documents with frontmatter validated, 4 code references checked " +
+            "(1 warnings; --refs-strict fails on them).\n"
+        val warning = "OKF WARNING: guide.md:6: `app/Gone.kt`: file not found in the repo — fix the path, " +
+            "write a sibling-repo path as `<repo>/<path>`, or opt the line out with `<!-- okf: ignore-refs -->`\n"
+        val stale = "updated in commit $updatedIn only for the changes it could see, but code it covers changed after it " +
+            "or outside its history"
+        val assertions: List<() -> Unit> = checks.flatMap { (variable, check) ->
+            listOf(
+                { assertEquals(0, check.code, "$variable: check exit code; $check") },
+                { assertEquals(summary, check.out, "$variable: check stdout") },
+                { assertEquals(warning, check.err, "$variable: check stderr") },
+            )
+        } + listOf(
+            { assertEquals(1, impact.code, "GIT_LITERAL_PATHSPECS: impact exit code; $impact") },
+            { assertEquals("", impact.out, "GIT_LITERAL_PATHSPECS: impact stdout") },
+            {
+                assertTrue(
+                    impact.err.startsWith("[NOT UPDATED] docs/adr/ADR-001-app.md <- src/main/kotlin/app/App.kt\n"),
+                    "GIT_LITERAL_PATHSPECS: impact stderr: ${impact.err}",
+                )
+            },
+            { assertTrue(stale in impact.err, "GIT_LITERAL_PATHSPECS: impact stderr: ${impact.err}") },
+        )
+        assertAll(*assertions.toTypedArray())
     }
 
     @Test
@@ -614,6 +660,30 @@ class OkfCliTest {
         return Run(code, text(out), text(err))
     }
 
+    /**
+     * `okf <args>` as a child process (this build's `all` jar on the test JVM's Java) with [variable]`=1` in its
+     * environment, the test's empty global git config, and no `GITHUB_ACTIONS` (no annotations on a CI runner). Every
+     * pathspec variable the test JVM may carry, in any case, is removed first.
+     */
+    private fun jar(variable: String, vararg args: String): Run {
+        val java = File(System.getProperty("java.home")).resolve("bin/java").path
+        val allJar = checkNotNull(System.getProperty("okf.allJar")) { "the build passes okf.allJar" }
+        val out = home.resolve("jar.out")
+        val err = home.resolve("jar.err")
+        val builder = ProcessBuilder(listOf(java, "-jar", allJar) + args).directory(repo).redirectOutput(out).redirectError(err)
+        builder.environment().apply {
+            keys.removeIf { name -> (PATHSPEC_ENV + "GITHUB_ACTIONS").any { it.equals(name, ignoreCase = true) } }
+            put("GIT_CONFIG_GLOBAL", globalConfig.path)
+            put("GIT_CONFIG_NOSYSTEM", "1")
+            put(variable, "1")
+        }
+        val process = builder.start()
+        process.outputStream.close()
+        val code = process.waitFor()
+        fun text(file: File) = file.readText(Charsets.UTF_8).replace("\r\n", "\n")
+        return Run(code, text(out), text(err))
+    }
+
     private fun write(path: String, text: String) {
         repo.resolve(path).apply { parentFile.mkdirs() }.writeText(text)
     }
@@ -637,5 +707,8 @@ class OkfCliTest {
 
     private companion object {
         val NOW: Instant = Instant.parse("2026-09-25T00:00:00Z")
+
+        /** The variables that change how git reads pathspecs. */
+        val PATHSPEC_ENV = listOf("GIT_LITERAL_PATHSPECS", "GIT_GLOB_PATHSPECS", "GIT_NOGLOB_PATHSPECS", "GIT_ICASE_PATHSPECS")
     }
 }

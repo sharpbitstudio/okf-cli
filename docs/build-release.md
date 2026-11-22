@@ -46,8 +46,9 @@ The bytecode and the compile API are pinned to Java 17, so consumers may run the
 runs on JDK 25.
 
 `test` runs every test except those tagged `network`. It depends on the `all` jar and passes the tests two system
-properties: `okf.allJar` (the jar, which the launcher tests run through `okfw` with a real Java) and `okf.repoRoot`
-(this checkout, whose `launcher/` the tests compare with the embedded copy, and whose `action/`, `action.yml` and
+properties: `okf.allJar` (the jar, which the launcher tests run through `okfw` with a real Java, and one CLI test
+directly with `java -jar`) and `okf.repoRoot` (this checkout, whose `launcher/` the tests compare with the embedded
+copy, and whose `action/`, `action.yml` and
 `xcheck/` the GitHub Actions' tests run). The launcher tests run `okfw` with a real `sh` (`/bin/sh`; on Windows Git
 for Windows' `sh.exe`) against `curl` and `java` stubs, with a `PATH` that holds only those stubs and the tools the
 script may use (`curl`, `gh` and `java` stubs for `--update` and `--verify`). The Action's tests run its scripts with

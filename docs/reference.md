@@ -498,6 +498,11 @@ okfTask("okfImpact", "impact", "okf.base" to "--base", "okf.impact.strict" to "-
 
 With these task names, `index_command: ./gradlew okfIndex` names the task that regenerates the indexes.
 
+okf runs git without the variables that would select another repository or index (`GIT_DIR`, `GIT_WORK_TREE`,
+`GIT_INDEX_FILE`), inject configuration (`GIT_CONFIG_COUNT`, `GIT_CONFIG_PARAMETERS`), trace git (`GIT_TRACE*`) or
+change how git reads paths (`GIT_LITERAL_PATHSPECS`, `GIT_GLOB_PATHSPECS`, `GIT_NOGLOB_PATHSPECS`,
+`GIT_ICASE_PATHSPECS`), whatever the case of their names.
+
 ## Compatibility
 
 - Semver. From **1.0.0 final**, within a major: for the same repository content, `okf.yaml`, command-line flags,

@@ -106,7 +106,7 @@ tasks.assemble {
 /**
  * System properties of the test JVMs: `okf.repoRoot` (this checkout, for the committed `launcher/`, `action/`,
  * `action.yml` and `xcheck/`) and `okf.allJar` (this build's `all` jar, which LauncherJarTest runs through the
- * launcher). The jar is an input, so `test` builds it first.
+ * launcher and OkfCliTest runs directly). The jar is an input, so `test` builds it first.
  */
 abstract class LauncherTestProperties : CommandLineArgumentProvider {
     @get:Internal
