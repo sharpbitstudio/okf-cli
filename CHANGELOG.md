@@ -31,6 +31,19 @@
   although code it covers changed after it, and `okf xcheck` skipped the drift check. The variables okf removes from
   git's environment are now matched ignoring case, as Windows treats environment names (`git_dir` reached git on
   Windows before).
+- Fix: `okf check` and `okf xcheck` no longer stop with `git check-ignore failed (exit 128)`, or with a broken-pipe
+  error on a large repository, when git refuses to check a path against its ignore rules. This happens for an
+  unresolved reference to a file inside a submodule or below a symbolic link to a directory, and for an unresolved
+  Markdown link whose path, after resolving `.` and `..`, starts with pathspec magic that git refuses here (`../:!x`)
+  or stops on (`../:(prefix:100)x`, a `BUG:` instead of exit 128), is a path outside the repository (on Windows
+  `../C:/x`, `../\x`, or a `..\..\x` that climbs out), or still contains a decoded NUL (`%00`). A path inside a
+  submodule or below a symbolic link, without `:` or `\`, is skipped when, checked from the top down, a directory
+  above it is excluded before git refuses one (for example a gitignored symbolic link to build output; a pattern
+  ending in `/` does not match a symbolic link); every other such path, and every path that still contains a NUL,
+  counts as not ignored, so its reference is reported as not found unless another path okf checks for it is ignored,
+  and the run reports its other findings as usual. Every path git can check gets the same answer as before.
+  `OkfGit.ignored` no longer returns the parts of a path split at a NUL, and on POSIX git's input and output files are
+  readable by their owner only.
 
 ## 1.0.0 — 2026-11-17
 

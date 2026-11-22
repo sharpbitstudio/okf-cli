@@ -211,7 +211,10 @@ A code-span path resolves as follows; the first match wins:
 6. A directory path that names the repository root itself, such as `../../` in a subdirectory of a docs root `docs`:
    the root always exists, so the path resolves.
 7. A path that Git's ignore rules exclude (`.gitignore`, `.git/info/exclude`, the global excludes file; build output,
-   for example): skipped.
+   for example): skipped. Git refuses to check a path inside a submodule or below a symbolic link; such a path is
+   skipped when, checked from the top down, a directory above it is excluded before git refuses one (a gitignored
+   symbolic link to build output, for example; a pattern ending in `/` does not match a symbolic link), and is not
+   found otherwise. A refused path with `:` or `\` never takes the answer of a directory above it: it is not found.
 8. Otherwise, the file or directory is not found.
 
 A path end of two or more segments (step 4) must match exactly one file or directory; with several, the finding asks
@@ -225,8 +228,9 @@ or an open range, is reported as an invalid line reference once the file is foun
 found.
 
 The files that exist are the ones git knows in the work tree: tracked files, and untracked files that are not
-ignored. A directory exists through the files below it, so an empty directory does not. The repository root itself
-always exists: for code spans at step 6, and as a link target ([Links](#links)).
+ignored. Files inside a submodule are not among them. A directory exists through the files below it, so an empty
+directory does not. The repository root itself always exists: for code spans at step 6, and as a link target
+([Links](#links)).
 
 ### Links
 
@@ -236,10 +240,14 @@ in parentheses, are not recognised and so not checked:
 
 - The part of the target before `#` or `?` is taken. A target that is then empty (a link to an anchor), starts with
   `/` or has a scheme (`https:`, `mailto:`) is skipped. Percent escapes such as `%20` are decoded.
-- The target resolves against the document's directory only, as a rendered page resolves it. A target that leaves
-  the repository is not checked. Otherwise it must be an existing file or directory, of any kind; the repository
-  root itself (for example `..` from a docs root `docs`) is one. A missing target is a finding unless Git's ignore
-  rules exclude it.
+- The target resolves against the document's directory only, as a rendered page resolves it. A target that leaves the
+  repository is not checked. Otherwise it must be an existing file or directory, of any kind; the repository root
+  itself (for example `..` from a docs root `docs`) is one. A missing target is a finding unless Git's ignore rules
+  exclude it; a missing target inside a submodule or below a symbolic link follows step 7 of the code-span rules. A
+  missing target that git refuses for another reason (pathspec magic git does not support here, `../:!x`; on Windows a
+  drive path `../C:/x` or a path with `\` that climbs out), and one whose resolved path still contains a decoded NUL
+  (`%00`), is always a finding. When a reported target is right (a file inside a submodule, for example, which is not
+  among the files git knows), opt the line out ([Opting out](#opting-out)).
 - Anchors are not checked. Reference-style links and autolinks are not recognised, so they are not checked either.
 
 ### Findings

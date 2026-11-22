@@ -419,7 +419,9 @@ The checks (failures exit `1`, warnings alone exit `0`):
   code-span reference that `okf check` skips as `<repo>/<path>` is resolved in the target repo when that repo is
   federated: repo root, then its package roots (incl. `source_roots`), then a path suffix (two or more segments must
   be unique; a line reference needs a unique file), with line numbers checked against the target's file and
-  gitignored paths in the target skipped; otherwise it is "not found in `<repo>`". As in `okf check`, a path with
+  gitignored paths in the target skipped (a path inside a submodule or below a symbolic link follows the rule of
+  `okf check`: skipped when, checked from the top down, a directory above it is ignored before git refuses one);
+  otherwise it is "not found in `<repo>`". As in `okf check`, a path with
   `.` / `..` segments after the repo name is explicitly relative and resolves from the target's root only; one
   that names just the repo or climbs out of it is not looked up (and not counted). Findings come in document and
   line order. References to repos that are only
@@ -515,8 +517,9 @@ change how git reads paths (`GIT_LITERAL_PATHSPECS`, `GIT_GLOB_PATHSPECS`, `GIT_
   the `xcheck --report` Markdown. Three things are outside it:
   - text passed through from elsewhere: the YAML parser's description of a syntax error (what follows
     `does not parse:`) and the type name it reports in `must be a YAML mapping, got …`, git's own error output
-    (what follows `git <command> failed (exit N) in <dir>:`) and operating-system messages (a file that cannot be
-    read or written, a program that cannot be started). They can change with a dependency, git or Java version;
+    (what follows `git <command> failed (exit N) in <dir>:` and `git check-ignore gave an unexpected answer in
+    <dir>:`) and operating-system messages (what follows `cannot prepare git <command>:`, a file that cannot be read
+    or written, a program that cannot be started). They can change with a dependency, git or Java version;
   - lists of allowed values inside a message (the `okf.yaml` keys, `index_language`, `adr_readme_link`, the
     `adr_status` values, the commands): a minor version may add an entry, and the message then names it. The
     built-in document types do not change within a major version;

@@ -160,6 +160,69 @@ class OkfCliTest {
     }
 
     @Test
+    fun `check reports links git cannot check against its ignore rules as not found, next to the other findings`() {
+        run("index", "--repo=${repo.path}")
+        write(".gitignore", "/generated/\n")
+        // Resolved: `docs/gone` + NUL, pathspec magic, a drive-like path, a path with `\` that climbs out (on Windows).
+        write(
+            "docs/guide.md",
+            "---\ntype: Guide\n---\n# G\n\n[a](gone%00) [b](../:!foo) [c](../C:/x) [d](..\\..\\other\\x.md)\n\n`app/Gone.kt` `generated/Gone.kt`\n",
+        )
+
+        val run = run("check", "--repo=${repo.path}", githubActions = true)
+        assertEquals(0, run.code, run.toString())
+        assertTrue(
+            run.out.trim().endsWith(
+                "okf check OK: 2 documents with frontmatter validated, 8 code references checked (5 warnings; --refs-strict fails on them).",
+            ),
+            run.out,
+        )
+        assertEquals(
+            listOf(
+                "OKF WARNING: guide.md:6: link target `gone\\u0000` not found (resolved against the document: docs/gone\\u0000)",
+                "OKF WARNING: guide.md:6: link target `../:!foo` not found (resolved against the document: :!foo)",
+                "OKF WARNING: guide.md:6: link target `../C:/x` not found (resolved against the document: C:/x)",
+                "OKF WARNING: guide.md:6: link target `..\\..\\other\\x.md` not found (resolved against the document: docs/..\\..\\other\\x.md)",
+                "OKF WARNING: guide.md:8: `app/Gone.kt`: file not found in the repo — fix the path, write a sibling-repo path as " +
+                    "`<repo>/<path>`, or opt the line out with `<!-- okf: ignore-refs -->`",
+            ),
+            run.err.trim().lines(),
+        )
+        assertTrue(
+            "::warning file=docs/guide.md,line=6,title=OKF ref::link target `gone\\u0000` not found " +
+                "(resolved against the document: docs/gone\\u0000)\n" in run.out,
+            run.out,
+        )
+        assertTrue('\u0000' !in run.out + run.err, "no NUL in the output")
+    }
+
+    @Test
+    fun `check reports a reference into a submodule as not found instead of stopping`() {
+        run("index", "--repo=${repo.path}")
+        write("inner/README.md", "inner\n")
+        git("-C", "inner", "init", "-q")
+        git("-C", "inner", "add", "README.md")
+        git("-C", "inner", "-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "commit", "-q", "-m", "inner")
+        git("add", "inner")
+        write("docs/guide.md", "---\ntype: Guide\n---\n# G\n\n`inner/README.md` [i](../inner/gone.md)\n\n`app/Gone.kt`\n")
+
+        val run = run("check", "--repo=${repo.path}")
+        assertEquals(0, run.code, run.toString())
+        assertEquals(
+            "okf check OK: 2 documents with frontmatter validated, 5 code references checked (3 warnings; --refs-strict fails on them).",
+            run.out.trim(),
+        )
+        assertEquals(
+            listOf(
+                "OKF WARNING: guide.md:6: `inner/README.md`: file not found in the repo",
+                "OKF WARNING: guide.md:6: link target `../inner/gone.md` not found (resolved against the document: inner/gone.md)",
+                "OKF WARNING: guide.md:8: `app/Gone.kt`: file not found in the repo",
+            ),
+            run.err.trim().lines().map { it.substringBefore(" — fix the path") },
+        )
+    }
+
+    @Test
     fun `check reports a stale index with the configured index_command`() {
         val run = run("check", "--repo=${repo.path}")
         assertEquals(1, run.code, run.toString())
