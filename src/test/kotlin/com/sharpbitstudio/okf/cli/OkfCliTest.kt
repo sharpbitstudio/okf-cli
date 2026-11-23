@@ -6,6 +6,7 @@ import com.sharpbitstudio.okf.assertSameText
 import org.junit.jupiter.api.Assertions.assertArrayEquals
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertAll
@@ -746,21 +747,23 @@ class OkfCliTest {
     }
 
     /**
-     * `okf <args>` as a child process (this build's `all` jar on the test JVM's Java) with [variable]`=1` in its
-     * environment, the test's empty global git config, and no `GITHUB_ACTIONS` (no annotations on a CI runner). Every
-     * pathspec variable the test JVM may carry, in any case, is removed first.
+     * `okf <args>` as a child process (this build's `all` jar on the test JVM's Java, started with [jvmOptions]) with
+     * [variable]`=1` in its environment (none when [variable] is `null`), the test's empty global git config, and no
+     * `GITHUB_ACTIONS` (no annotations on a CI runner). Every pathspec variable the test JVM may carry, in any case, is
+     * removed first.
      */
-    private fun jar(variable: String, vararg args: String): Run {
+    private fun jar(variable: String?, vararg args: String, jvmOptions: List<String> = emptyList()): Run {
         val java = File(System.getProperty("java.home")).resolve("bin/java").path
         val allJar = checkNotNull(System.getProperty("okf.allJar")) { "the build passes okf.allJar" }
         val out = home.resolve("jar.out")
         val err = home.resolve("jar.err")
-        val builder = ProcessBuilder(listOf(java, "-jar", allJar) + args).directory(repo).redirectOutput(out).redirectError(err)
+        val command = listOf(java) + jvmOptions + listOf("-jar", allJar) + args
+        val builder = ProcessBuilder(command).directory(repo).redirectOutput(out).redirectError(err)
         builder.environment().apply {
             keys.removeIf { name -> (PATHSPEC_ENV + "GITHUB_ACTIONS").any { it.equals(name, ignoreCase = true) } }
             put("GIT_CONFIG_GLOBAL", globalConfig.path)
             put("GIT_CONFIG_NOSYSTEM", "1")
-            put(variable, "1")
+            if (variable != null) put(variable, "1")
         }
         val process = builder.start()
         process.outputStream.close()
@@ -860,5 +863,47 @@ class OkfCliTest {
         } finally {
             if (before == null) file.delete() else file.writeText(before)
         }
+    }
+
+    // Long input: globs on deep paths and long runs of double-star segments.
+    @Test
+    fun `impact matches a deleted path 2,000 directories deep`() {
+        // The deep file exists only in git (added to the index, committed, then removed): no checkout holds it. Git for
+        // Windows refuses trees deeper than 2,048 levels; a git that refuses a step with the deep path skips the test.
+        // The jar runs on a 512 KiB stack, so a recursion per directory overflows on every platform.
+        write("docs/guide.md", "---\ntype: Guide\ncode_paths: [\"**/x.kt\"]\n---\n# G\n")
+        commit("guide")
+        val blob = git("rev-parse", "HEAD:src/main/kotlin/app/App.kt")
+        val deep = "a/".repeat(2_000) + "x.kt"
+        fixtureGit("update-index", "--add", "--cacheinfo", "100644,$blob,$deep")
+        fixtureGit("commit", "-q", "-m", "deep file")
+        val base = git("rev-parse", "HEAD")
+        fixtureGit("update-index", "--force-remove", deep)
+        fixtureGit("commit", "-q", "-m", "remove the deep file")
+
+        val impact = jar(null, "impact", "--repo=${repo.path}", "--base=$base", jvmOptions = listOf("-Xss512k"))
+        val err = "[NOT UPDATED] docs/guide.md <- $deep\n" +
+            "OKF IMPACT WARNING: docs/guide.md: ${notUpdated(deep, "guide")}\n" +
+            "OKF IMPACT: 1 finding(s); --impact-strict fails on them.\n"
+        val out = "okf impact: 1 changed files outside docs/ since merge-base ${base.take(7)} with ${base.take(7)}; " +
+            "2 documents with code_paths, 1 impacted (0 updated, 0 acknowledged, 1 NOT UPDATED).\n"
+        assertSameText(Run(0, out, err), impact)
+    }
+
+    /** `git <args>` in the repo for a step with a path a platform's git may refuse: the test is skipped, not failed, when it does. */
+    private fun fixtureGit(vararg args: String): String {
+        // Git may warn on stderr about a path too long to stat; only stdout is the answer.
+        val err = home.resolve("fixture-git.err")
+        val process = ProcessBuilder(listOf("git") + args).directory(repo).redirectError(err)
+            .apply {
+                environment()["GIT_CONFIG_GLOBAL"] = globalConfig.path
+                environment()["GIT_CONFIG_NOSYSTEM"] = "1"
+            }
+            .start()
+        process.outputStream.close()
+        val output = process.inputStream.bufferedReader().readText()
+        val exit = process.waitFor()
+        assumeTrue(exit == 0) { "git ${args.joinToString(" ").take(200)} exited with $exit: ${err.readText().take(2_000)}" }
+        return output.trim()
     }
 }

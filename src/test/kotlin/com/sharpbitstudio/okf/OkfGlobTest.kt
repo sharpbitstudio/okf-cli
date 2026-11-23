@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.assertAll
 import org.junit.jupiter.api.assertThrows
 
 class OkfGlobTest {
@@ -192,5 +193,79 @@ class OkfGlobTest {
         assertTrue(plain.matches("xby"))
         assertFalse(plain.matches("xcy"))
         assertFalse(plain.matches("x/y"))
+    }
+
+    // Long input: globs on deep paths and long runs of double-star segments.
+    @Test
+    fun `a double-star glob matches a path 100,000 directories deep`() {
+        val deep = "a/".repeat(100_000) + "x.kt"
+        val wide = "abcdefgh/".repeat(100_000) + "x.kt"
+        assertAll(
+            { assertTrue(OkfGlob.compile("**/x.kt").matches(deep)) },
+            { assertTrue(OkfGlob.compile("**/x.kt").matches(wide)) },
+            { assertTrue(OkfGlob.compile("**/a/**/x.kt").matches(deep)) },
+            { assertFalse(OkfGlob.compile("**/y.kt").matches(deep)) },
+            // A trailing `**` has no step per directory.
+            { assertTrue(OkfGlob.compile("a/**").matches(deep)) },
+        )
+    }
+
+    @Test
+    fun `a glob of 100,000 double-star segments in a row`() {
+        val glob = "**/".repeat(100_000) + "x"
+        assertAll(
+            { assertTrue(OkfGlob.compile(glob).matches("x")) },
+            { assertTrue(OkfGlob.compile(glob).matches("a/b/x")) },
+            { assertFalse(OkfGlob.compile(glob).matches("a/b/y")) },
+        )
+    }
+
+    @Test
+    fun `a glob of 100,000 wildcards compiles`() {
+        // Compiled on a small stack, where a recursive study of the pattern would overflow on every platform.
+        val glob = onStack(256) { OkfGlob.compile("?".repeat(100_000)) }
+        assertFalse(glob.matches("a"))
+        assertFalse(glob.matches("src/a.kt"))
+    }
+
+    @Test
+    fun `a translate error in a later alternative wins over a long earlier alternative`() {
+        val glob = "{" + "?".repeat(100_000) + ",a**}"
+        val error = onStack(256) { assertThrows<IllegalArgumentException> { OkfGlob.compile(glob) } }
+        assertEquals("`**` must be a whole path segment (`a/**`, `**/b`, `a/**/b`) in alternative 'a**'", error.message)
+    }
+
+    @Test
+    fun `a double-star step tries the farthest directory first, as the single regex did`() {
+        // From the 64-letter directory the twelve `*a` would backtrack through C(64, 12) ways; it is never tried, because
+        // the step first reaches the directory where the chunk matches at once.
+        val glob = "**/" + "*a".repeat(12) + "z/**/x"
+        val path = "a".repeat(64) + "/" + "a".repeat(12) + "z/x"
+        assertTrue(withinSeconds(10) { OkfGlob.compile(glob).matches(path) })
+    }
+
+    @Test
+    fun `a trailing double star after a deep path finds its late match in linear time`() {
+        // `.` does not match U+2028, so `a/` + `.+` fails at every directory but the last but one; that one is tried first.
+        val path = "a/".repeat(100_000) + "b\u2028/a/x"
+        assertTrue(withinSeconds(10) { OkfGlob.compile("**/a/**").matches(path) })
+    }
+
+    @Test
+    fun `a long run of wildcards after a double star compiles`() {
+        val glob = onStack(256) { OkfGlob.compile("{x.kt,**/" + "?".repeat(100_000) + "}") }
+        assertTrue(glob.matches("x.kt"))
+    }
+
+    @Test
+    fun `a long literal alternative compiles in linear time`() {
+        val glob = withinSeconds(10) { OkfGlob.compile("{x.kt," + "a".repeat(1_000_000) + "}") }
+        assertTrue(glob.matches("x.kt"))
+    }
+
+    @Test
+    fun `a failed double-star step is not tried again`() {
+        // Without remembering failed steps the search would try about C(1000, 4) ways of placing the four `a/`.
+        assertFalse(withinSeconds(10) { OkfGlob.compile("**/a/**/a/**/a/**/a/**/b").matches("a/".repeat(1_000) + "c") })
     }
 }
