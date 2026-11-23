@@ -146,4 +146,13 @@ class OkfCodePathsTest {
         const val MAIN = "server/src/main/java/com/example/plaza"
         const val OTP = "$MAIN/otp"
     }
+
+    // Long input: globs on deep paths and long runs of double-star segments.
+    @Test
+    fun `a glob is matched against a file 5,000 directories deep`() {
+        // The index holds every ancestor directory (about 25 million characters at this depth), so it is built once, on the
+        // test thread; the match runs on a small stack.
+        val deep = RepoIndex(listOf("a/".repeat(5_000) + "x.kt"))
+        assertEquals(CodePathsResult(emptyList(), emptyList()), onStack(256) { OkfCodePaths.validate(listOf("**/x.kt"), deep) })
+    }
 }

@@ -416,4 +416,21 @@ class OkfImpactTest {
         const val MERGE = "cccc333333"
         const val K3 = "dddd444444"
     }
+
+    // Long input: globs on deep paths and long runs of double-star segments.
+    @Test
+    fun `a changed file 100,000 directories deep is matched`() {
+        val deep = "a/".repeat(100_000) + "x.kt"
+        val result = OkfImpact.evaluate(
+            listOf(doc("guide.md", "type: Guide\ncode_paths: [\"**/x.kt\"]")),
+            "docs",
+            listOf(deep),
+            emptyList(),
+            emptySet(),
+            { emptyList() },
+            { a, b -> a == b },
+        )
+        assertSameText(listOf("[NOT UPDATED] docs/guide.md <- $deep"), lines(result))
+        assertEquals(listOf("docs/guide.md"), result.findings.map { it.doc })
+    }
 }

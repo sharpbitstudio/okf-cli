@@ -6,6 +6,12 @@
   a code span with a few thousand path segments or line numbers (`a/a/…/x.kt`, `x.kt:1,1,…`) or a `hub:` value of
   a few thousand words, and no command stops so on a `base_ref` of a few thousand parts (in `okf xcheck` also a
   satellite's). They are read like short ones; every value that was read before is read the same way.
+- Fix: a `code_paths` glob with `**` no longer makes `okf check` or `okf impact` stop with a `StackOverflowError`
+  on a path about 1,400 or more directories deep, or when the glob has thousands of `**` segments in a row. Every
+  glob that compiled before matches the same paths as before. A glob with thousands of wildcards, which `okf check`
+  rejected with a message about a reversed character range (and `okf impact` ignored), now compiles; when such a
+  run of wildcards matches thousands of characters of a path (across thousands of directories, or in a name only
+  git can hold), the stack overflows, as it did for a shorter run that compiled before.
 
 ## 1.0.1 — 2026-11-22
 
