@@ -73,14 +73,21 @@ class OkfRefChecker(
 
     /**
      * `PATH` + optional `:N[,N…]` (each `N` or `N-M`, hyphen or en dash) or `:ident`; group 1 = path, 3 = line list.
-     * Internal for the differential tests.
+     * Internal for the differential tests. The path segments and the line list items repeat possessively (`*+`):
+     * java.util.regex repeats a group greedily by recursion, one level per repetition, so a span with a few thousand
+     * segments or line numbers overflowed the stack; a possessive repetition runs as a loop. It matches what a greedy one
+     * would: a segment ends only at a `/` and an item only at a `,` or the end, and giving back a repetition leaves a
+     * segment character or a `,` where the rest of the pattern cannot take it.
      */
     internal val fileRef = Regex(
-        """((?:$SEGMENT/)*$SEGMENT\.(${extensions.joinToString("|")}))(?::(?:($LINES(?:,$LINES)*)|[A-Za-z_][\w.#()]*))?""",
+        """((?:$SEGMENT/)*+$SEGMENT\.(${extensions.joinToString("|")}))(?::(?:($LINES(?:,$LINES)*+)|[A-Za-z_][\w.#()]*))?""",
     )
 
-    /** `PATH:` + anything that [fileRef] rejects (`:30,`, `:5-`, `:1,,2`); group 1 = path. Internal for the differential tests. */
-    internal val malformedLinesRef = Regex("""((?:$SEGMENT/)*$SEGMENT\.(${extensions.joinToString("|")})):(.*)""")
+    /**
+     * `PATH:` + anything that [fileRef] rejects (`:30,`, `:5-`, `:1,,2`); group 1 = path. Internal for the differential
+     * tests. The path segments repeat possessively, as in [fileRef], with the same matches.
+     */
+    internal val malformedLinesRef = Regex("""((?:$SEGMENT/)*+$SEGMENT\.(${extensions.joinToString("|")})):(.*)""")
 
     /**
      * The code-span references of [docs] that [check] skips as sibling-repo references (`<repo>/<path>` with `<repo>`
@@ -375,8 +382,12 @@ class OkfRefChecker(
         /** Whitespace after a comma between two digits (`:23, 35`), removed before the placeholder check. */
         private val LINE_LIST_SPACE = Regex("""(?<=\d),\s+(?=\d)""")
 
-        /** `DIR/` — at least one segment, trailing slash required. Internal for the differential tests. */
-        internal val DIR_REF = Regex("""((?:$SEGMENT/)+)""")
+        /**
+         * `DIR/` — at least one segment, trailing slash required. Internal for the differential tests. The segments repeat
+         * possessively (`++`), a loop instead of one recursion level per segment; a segment ends only at a `/`, and giving
+         * one back leaves a segment character before the end, so it matches what a greedy repetition would.
+         */
+        internal val DIR_REF = Regex("""((?:$SEGMENT/)++)""")
 
         private val URL_SCHEME = Regex("""^[A-Za-z][A-Za-z0-9+.-]*:""")
 

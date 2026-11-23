@@ -62,7 +62,12 @@ object OkfChecker {
 
     /** Satellite Note → its hub Feature Record, in the `Docs-Impact:` ID form (`features/<slug>`). */
     internal const val HUB_KEY = "hub"
-    internal val HUB_ID = Regex("""features/[a-z0-9]+(?:-[a-z0-9]+)*""")
+    /**
+     * A hub ID, `features/<slug>` with the slug's lowercase words joined by single hyphens. The words after the first
+     * repeat possessively (`*+`), a loop instead of one recursion level per word; a word ends only at a `-` or the end,
+     * and giving one back leaves a `-` before the end, so it matches what a greedy repetition would.
+     */
+    internal val HUB_ID = Regex("""features/[a-z0-9]+(?:-[a-z0-9]+)*+""")
 
     /** Feature Record → the sibling repos (`external_repos`) whose Satellite Notes belong to it. */
     internal const val REPOS_KEY = "repos"

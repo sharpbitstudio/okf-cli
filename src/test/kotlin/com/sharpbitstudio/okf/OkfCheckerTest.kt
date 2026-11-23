@@ -620,4 +620,13 @@ class OkfCheckerTest {
         val NOW: Instant = Instant.parse("2026-09-25T00:00:00Z")
         const val HUB = "plaza-server-app"
     }
+
+    // Long input: reference patterns (code spans, hub ids, base_ref values).
+    @Test
+    fun `a hub id of 100,000 words is valid`() {
+        bundle("long-hub/API_PLAN.md" to satellite(hub = "features/" + "a-".repeat(100_000) + "a"))
+        val result = OkfChecker.check(root, TestConfigs.SR.copy(hubRepo = HUB), strict = true, now = NOW, codePathsRequired = true)
+        assertSameText(emptyList<String>(), result.problems)
+        assertEquals(1, result.validated)
+    }
 }

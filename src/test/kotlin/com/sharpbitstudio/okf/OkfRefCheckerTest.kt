@@ -3,6 +3,7 @@ package com.sharpbitstudio.okf
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.assertAll
 import org.junit.jupiter.api.assertThrows
 import org.junit.jupiter.api.io.TempDir
 import java.io.File
@@ -509,4 +510,27 @@ class OkfRefCheckerTest {
             "fiord-server",
         )
     }
+
+    // Long input: reference patterns (code spans, hub ids, base_ref values).
+    @Test
+    fun `code spans with 100,000 path segments, line numbers or a malformed line part are references`() {
+        val path = "a/".repeat(100_000) + "a.kt"
+        val dir = "a/".repeat(100_000)
+        val lineList = "x.kt:" + "1,".repeat(100_000) + "1"
+        val malformed = "a/".repeat(100_000) + "a.kt:x,"
+        assertAll(
+            { assertSameText(listOf(notFound(path, "file")), findings("`$path`\n")) },
+            { assertSameText(listOf(notFound(dir, "directory")), findings("`$dir`\n")) },
+            { assertSameText(listOf(notFound(lineList, "file")), findings("`$lineList`\n")) },
+            { assertSameText(listOf(notFound(malformed, "file")), findings("`$malformed`\n")) },
+        )
+    }
+
+    /** The finding for a code span labelled [text] on the first body line of the default document that names a missing [kind]. */
+    private fun notFound(text: String, kind: String) = RefFinding(
+        "adr/ADR-001-test.md",
+        4,
+        "`$text`: $kind not found in the repo — fix the path, write a sibling-repo path as `<repo>/<path>`, " +
+            "or opt the line out with `<!-- okf: ignore-refs -->`",
+    )
 }
