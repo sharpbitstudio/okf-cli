@@ -406,4 +406,11 @@ class OkfConfigTest {
         const val HUB_HEAD = "schema_version: 1\nrepo: hub\nexternal_repos: [sat]\n" +
             "satellites: [{repo: sat, description: d, index: \"https://x/docs/index.md\"}]\n"
     }
+
+    // Long input: reference patterns (code spans, hub ids, base_ref values).
+    @Test
+    fun `a base_ref of 100,000 parts is a branch name`() {
+        val value = "a/".repeat(100_000) + "a"
+        assertSameText(value, OkfConfig.parse("schema_version: 1\nrepo: r\nbase_ref: $value\n").baseRef)
+    }
 }

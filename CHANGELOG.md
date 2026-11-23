@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Fix: `okf check` and `okf xcheck` no longer stop with a `StackOverflowError` (a Java stack trace and exit `1`) on
+  a code span with a few thousand path segments or line numbers (`a/a/…/x.kt`, `x.kt:1,1,…`) or a `hub:` value of
+  a few thousand words, and no command stops so on a `base_ref` of a few thousand parts (in `okf xcheck` also a
+  satellite's). They are read like short ones; every value that was read before is read the same way.
+
 ## 1.0.1 — 2026-11-22
 
 Bug fixes in the jar and in the xcheck action; no new `okf.yaml` keys, command-line flags or defaults. In the jar,

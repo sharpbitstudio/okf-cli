@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.assertAll
 import org.junit.jupiter.api.assertThrows
 import org.junit.jupiter.api.io.TempDir
 import java.io.ByteArrayOutputStream
@@ -521,5 +522,62 @@ class OkfXcheckCliTest {
 
         /** 2026-01-01T00:00:00Z. */
         const val DAY_0 = 1_767_225_600L
+    }
+
+    // Long input: reference patterns (code spans, hub ids, base_ref values).
+    @Test
+    fun `xcheck reads long code spans, a long hub id and a satellite base_ref`() {
+        val units = 100_000
+        fun guide(span: String) = "---\ntype: Guide\n---\n# G\n\n`$span`\n"
+        fun summary(resolved: Int, unchecked: Int) =
+            "3 repos checked, $resolved cross-repo references resolved, $unchecked references to non-federated repos not checked, " +
+                "2 Satellite Notes linked to 1 Feature Records"
+        val hubId = "features/" + "a-".repeat(units) + "a"
+        val satAConfig = satA.resolve("okf.yaml").readText()
+        assertAll(
+            // A line list into sat-a: resolved there, line 1 exists (one more reference resolved).
+            {
+                withText(hub, "docs/guide.md", guide("sat-a/lib/a.kt:" + "1,".repeat(units) + "1")) {
+                    assertSameText(Run(0, "okf xcheck OK: ${summary(5, 1)}.\n", ""), xcheck())
+                }
+            },
+            // A path into a repo outside the federation: counted, not checked.
+            {
+                withText(hub, "docs/guide.md", guide("legacy/" + "a/".repeat(units) + "x.kt")) {
+                    assertSameText(Run(0, "okf xcheck OK: ${summary(4, 2)}.\n", ""), xcheck())
+                }
+            },
+            // A note whose hub id is valid but names no record.
+            {
+                withText(satB, "doc/LONG.md", note(hub = hubId)) {
+                    assertSameText(
+                        Run(
+                            1,
+                            "okf xcheck: ${summary(4, 1)}; 1 problem(s), 0 warning(s).\n",
+                            "okf xcheck found 1 problem(s):\n  - sat-b/doc/LONG.md:3: hub '$hubId' does not resolve: hub/docs/$hubId.md does not exist\n",
+                        ),
+                        xcheck(),
+                    )
+                }
+            },
+            // A satellite's okf.yaml is parsed with the hub's jar.
+            {
+                withText(satA, "okf.yaml", satAConfig + "base_ref: " + "a/".repeat(units) + "a\n") {
+                    assertSameText(Run(0, "okf xcheck OK: ${summary(4, 1)}.\n", ""), xcheck())
+                }
+            },
+        )
+    }
+
+    /** Runs [body] with [path] in [repo] holding [text], then puts back what was there before (or deletes it). */
+    private fun <T> withText(repo: File, path: String, text: String, body: () -> T): T {
+        val file = repo.resolve(path)
+        val before = if (file.isFile) file.readText() else null
+        write(repo, path, text)
+        try {
+            return body()
+        } finally {
+            if (before == null) file.delete() else file.writeText(before)
+        }
     }
 }

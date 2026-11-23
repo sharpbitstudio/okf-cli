@@ -796,4 +796,69 @@ class OkfCliTest {
         /** The variables that change how git reads pathspecs. */
         val PATHSPEC_ENV = listOf("GIT_LITERAL_PATHSPECS", "GIT_GLOB_PATHSPECS", "GIT_NOGLOB_PATHSPECS", "GIT_ICASE_PATHSPECS")
     }
+
+    // Long input: reference patterns (code spans, hub ids, base_ref values).
+    @Test
+    fun `check reads code spans, a hub id and a base_ref of 100,000 parts`() {
+        run("index", "--repo=${repo.path}")
+        val units = 100_000
+        // Spans into the sibling repo are counted without a git lookup; each input adds one reference or one document.
+        fun guide(span: String) = "---\ntype: Guide\n---\n# G\n\n`$span`\n"
+        val spans = listOf(
+            "sibling-repo/" + "a/".repeat(units) + "a.kt",
+            "sibling-repo/" + "a/".repeat(units),
+            "sibling-repo/a.kt:" + "1,".repeat(units) + "1",
+        )
+        val withSpan = "okf check OK: 2 documents with frontmatter validated, 3 code references resolved.\n"
+        val hubYaml = repo.resolve("okf.yaml").readText() + "hub_repo: sibling-repo\n"
+        val note = "---\ntype: Satellite Note\nhub: features/" + "a-".repeat(units) + "a\ncode_paths: []\n---\n# N\n"
+        val withNote = "okf check OK: 2 documents with frontmatter validated, 2 code references resolved.\n"
+        val baseRefYaml = repo.resolve("okf.yaml").readText() + "base_ref: " + "a/".repeat(units) + "a\n"
+        val plain = "okf check OK: 1 documents with frontmatter validated, 2 code references resolved.\n"
+        val inputs: List<() -> Unit> = spans.map { span ->
+            { withText("docs/guide.md", guide(span)) { assertSameText(Run(0, withSpan, ""), run("check", "--repo=${repo.path}")) } }
+        } + listOf(
+            {
+                withText("okf.yaml", hubYaml) {
+                    withText("docs/note.md", note) { assertSameText(Run(0, withNote, ""), run("check", "--repo=${repo.path}")) }
+                }
+            },
+            { withText("okf.yaml", baseRefYaml) { assertSameText(Run(0, plain, ""), run("check", "--repo=${repo.path}")) } },
+        )
+        assertAll(*inputs.toTypedArray())
+    }
+
+    @Test
+    fun `impact reads a base_ref of 100,000 parts`() {
+        write("okf.yaml", repo.resolve("okf.yaml").readText() + "base_ref: " + "a/".repeat(100_000) + "a\n")
+        commit("base")
+        val base = git("rev-parse", "HEAD")
+        write("src/main/kotlin/app/App.kt", "package app\n\nfun x() = 1\n")
+        commit("change app")
+
+        val impact = run("impact", "--repo=${repo.path}", "--base=$base")
+        val err = "[NOT UPDATED] docs/adr/ADR-001-app.md <- src/main/kotlin/app/App.kt\n" +
+            "OKF IMPACT WARNING: docs/adr/ADR-001-app.md: ${notUpdated("src/main/kotlin/app/App.kt", "ADR-001")}\n" +
+            "OKF IMPACT: 1 finding(s); --impact-strict fails on them.\n"
+        val out = "okf impact: 1 changed files outside docs/ since merge-base ${base.take(7)} with ${base.take(7)}; " +
+            "1 documents with code_paths, 1 impacted (0 updated, 0 acknowledged, 1 NOT UPDATED).\n"
+        assertSameText(Run(0, out, err), impact)
+    }
+
+    /** The impact finding for a document that covers [files] and was neither updated nor acknowledged; [id] is its suggested ID. */
+    private fun notUpdated(files: String, id: String) =
+        "not updated although code it covers changed ($files) — update it (a `verified.at` bump counts once the content is " +
+            "re-checked) or add a commit trailer `Docs-Impact: $id — <why it stays valid>`"
+
+    /** Runs [body] with the repo file [path] holding [text], then puts back what was there before (or deletes it). */
+    private fun <T> withText(path: String, text: String, body: () -> T): T {
+        val file = repo.resolve(path)
+        val before = if (file.isFile) file.readText() else null
+        write(path, text)
+        try {
+            return body()
+        } finally {
+            if (before == null) file.delete() else file.writeText(before)
+        }
+    }
 }
