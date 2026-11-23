@@ -31,8 +31,7 @@ class OkfGlob private constructor(val pattern: String, private val regex: Regex)
             require(glob.isNotEmpty()) { "empty glob" }
             require('\\' !in glob) { "`\\` is not allowed — paths use `/`" }
             // Braces are expanded first, so `**` is checked as a whole segment in each alternative (`a/{b/**,c/**}`).
-            val alternatives = BraceExpansion(glob).expand().distinct()
-            require(alternatives.size <= MAX_ALTERNATIVES) { "too many `{}` combinations (max $MAX_ALTERNATIVES)" }
+            val alternatives = expandAlternatives(glob)
             val regex = alternatives.joinToString("|") { alternative ->
                 try {
                     "(?:${translate(alternative)})"
@@ -49,6 +48,16 @@ class OkfGlob private constructor(val pattern: String, private val regex: Regex)
                 throw IllegalArgumentException(RANGE_OUT_OF_ORDER, e)
             }
             return OkfGlob(glob, compiled)
+        }
+
+        /**
+         * The brace-free alternatives of [glob] ([BraceExpansion]), each once, in order; throws [IllegalArgumentException] on
+         * a brace syntax error or when there are more than [MAX_ALTERNATIVES]. Internal for the differential tests.
+         */
+        internal fun expandAlternatives(glob: String): List<String> {
+            val alternatives = BraceExpansion(glob).expand().distinct()
+            require(alternatives.size <= MAX_ALTERNATIVES) { "too many `{}` combinations (max $MAX_ALTERNATIVES)" }
+            return alternatives
         }
 
         /** Regex for one brace-free alternative. */

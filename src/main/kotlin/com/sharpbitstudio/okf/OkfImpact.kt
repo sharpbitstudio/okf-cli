@@ -72,8 +72,11 @@ object OkfImpact {
     /** An indented line continuing the previous trailer's value. */
     private val CONTINUATION = Regex("""[ \t]+\S.*""")
 
-    /** Separator between the ID list and the reason; a plain hyphen needs spaces around it (IDs contain hyphens). */
-    private val REASON_SEPARATOR = Regex("""\s*[—–]\s*|\s+--?\s+""")
+    /**
+     * Separator between the ID list and the reason; a plain hyphen needs spaces around it (IDs contain hyphens).
+     * Internal for the differential tests.
+     */
+    internal val REASON_SEPARATOR = Regex("""\s*[—–]\s*|\s+--?\s+""")
 
     private val ADR_ID = Regex("""ADR-(\d{3})""")
 

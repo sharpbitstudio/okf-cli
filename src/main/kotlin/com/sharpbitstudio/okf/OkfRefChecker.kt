@@ -71,13 +71,16 @@ class OkfRefChecker(
 
     private val extensions = (EXTENSIONS + refExtensions).distinct()
 
-    /** `PATH` + optional `:N[,N…]` (each `N` or `N-M`, hyphen or en dash) or `:ident`; group 1 = path, 3 = line list. */
-    private val fileRef = Regex(
+    /**
+     * `PATH` + optional `:N[,N…]` (each `N` or `N-M`, hyphen or en dash) or `:ident`; group 1 = path, 3 = line list.
+     * Internal for the differential tests.
+     */
+    internal val fileRef = Regex(
         """((?:$SEGMENT/)*$SEGMENT\.(${extensions.joinToString("|")}))(?::(?:($LINES(?:,$LINES)*)|[A-Za-z_][\w.#()]*))?""",
     )
 
-    /** `PATH:` + anything that [fileRef] rejects (`:30,`, `:5-`, `:1,,2`); group 1 = path. */
-    private val malformedLinesRef = Regex("""((?:$SEGMENT/)*$SEGMENT\.(${extensions.joinToString("|")})):(.*)""")
+    /** `PATH:` + anything that [fileRef] rejects (`:30,`, `:5-`, `:1,,2`); group 1 = path. Internal for the differential tests. */
+    internal val malformedLinesRef = Regex("""((?:$SEGMENT/)*$SEGMENT\.(${extensions.joinToString("|")})):(.*)""")
 
     /**
      * The code-span references of [docs] that [check] skips as sibling-repo references (`<repo>/<path>` with `<repo>`
@@ -372,8 +375,8 @@ class OkfRefChecker(
         /** Whitespace after a comma between two digits (`:23, 35`), removed before the placeholder check. */
         private val LINE_LIST_SPACE = Regex("""(?<=\d),\s+(?=\d)""")
 
-        /** `DIR/` — at least one segment, trailing slash required. */
-        private val DIR_REF = Regex("""((?:$SEGMENT/)+)""")
+        /** `DIR/` — at least one segment, trailing slash required. Internal for the differential tests. */
+        internal val DIR_REF = Regex("""((?:$SEGMENT/)+)""")
 
         private val URL_SCHEME = Regex("""^[A-Za-z][A-Za-z0-9+.-]*:""")
 
