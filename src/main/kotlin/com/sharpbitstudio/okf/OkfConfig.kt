@@ -111,8 +111,11 @@ data class OkfConfig(
         private const val LINK_BREAKERS = "()<>"
         private val WINDOWS_DRIVE = Regex("""^[A-Za-z]:""")
 
-        /** A branch name for `base_ref`: `/`-joined ASCII parts, each starting with a letter, digit or `_`. */
-        private val BRANCH_NAME = Regex("""[A-Za-z0-9_][A-Za-z0-9._-]*(/[A-Za-z0-9_][A-Za-z0-9._-]*)*""")
+        /**
+         * A branch name for `base_ref`: `/`-joined ASCII parts, each starting with a letter, digit or `_`. Internal for the
+         * differential tests.
+         */
+        internal val BRANCH_NAME = Regex("""[A-Za-z0-9_][A-Za-z0-9._-]*(/[A-Za-z0-9_][A-Za-z0-9._-]*)*""")
 
         /** Reads `<repoDir>/okf.yaml`; throws [OkfConfigException] when it is missing or invalid. */
         fun load(repoDir: File): OkfConfig {
