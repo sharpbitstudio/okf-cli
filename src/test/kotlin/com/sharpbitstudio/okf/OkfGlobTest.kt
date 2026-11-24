@@ -268,4 +268,25 @@ class OkfGlobTest {
         // Without remembering failed steps the search would try about C(1000, 4) ways of placing the four `a/`.
         assertFalse(withinSeconds(10) { OkfGlob.compile("**/a/**/a/**/a/**/a/**/b").matches("a/".repeat(1_000) + "c") })
     }
+
+    // Long input: brace groups.
+    @Test
+    fun `braces nested 100,000 deep compile`() {
+        assertTrue(OkfGlob.compile("{".repeat(100_000) + "a" + "}".repeat(100_000)).matches("a"))
+    }
+
+    @Test
+    fun `100,000 brace groups are rejected as too many at once`() {
+        val glob = "{a,b}".repeat(100_000) + "x.kt"
+        // Not through assertThrows: an error such as OutOfMemoryError reaches JUnit as itself.
+        val error = withinSeconds(10) {
+            try {
+                OkfGlob.compile(glob)
+                null
+            } catch (e: IllegalArgumentException) {
+                e
+            }
+        }
+        assertEquals("too many `{}` combinations (max 1000)", error?.message)
+    }
 }

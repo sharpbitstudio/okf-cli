@@ -533,4 +533,23 @@ class OkfRefCheckerTest {
         "`$text`: $kind not found in the repo — fix the path, write a sibling-repo path as `<repo>/<path>`, " +
             "or opt the line out with `<!-- okf: ignore-refs -->`",
     )
+
+    // Long input: brace groups.
+    @Test
+    fun `a code span with 100,000 brace groups is expanded`() {
+        val token = "{a}".repeat(100_000) + "x.kt"
+        val variant = "a".repeat(100_000) + "x.kt"
+        assertSameText(listOf(notFound("$variant (from $token)", "file")), findings("`$token`\n"))
+    }
+
+    @Test
+    fun `thirty brace groups expand to 64 variants at once`() {
+        val token = "{a,b}".repeat(30) + "x.kt"
+        val result = withinSeconds(10) { findings("`$token`\n") }
+        // The first 64 variants in order: the first 24 groups take `a`, the last six count up in binary (`a` = 0, `b` = 1).
+        val variants = (0 until 64).map { i ->
+            "a".repeat(24) + (5 downTo 0).joinToString("") { bit -> if (((i shr bit) and 1) == 0) "a" else "b" } + "x.kt"
+        }
+        assertSameText(variants.map { notFound("$it (from $token)", "file") }, result)
+    }
 }

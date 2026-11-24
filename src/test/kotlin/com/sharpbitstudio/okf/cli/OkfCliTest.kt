@@ -906,4 +906,49 @@ class OkfCliTest {
         assumeTrue(exit == 0) { "git ${args.joinToString(" ").take(200)} exited with $exit: ${err.readText().take(2_000)}" }
         return output.trim()
     }
+
+    // Long input: brace groups.
+    @Test
+    fun `check expands 100,000 brace groups in a span and a glob nested 100,000 deep`() {
+        run("index", "--repo=${repo.path}")
+        val span = "sibling-repo/" + "{a}".repeat(100_000) + "x.kt"
+        val glob = "{".repeat(100_000) + "src/main/kotlin/app/App.kt" + "}".repeat(100_000)
+        assertAll(
+            // The one variant is a sibling-repo path: counted, not looked up.
+            {
+                withText("docs/guide.md", "---\ntype: Guide\n---\n# G\n\n`$span`\n") {
+                    val out = "okf check OK: 2 documents with frontmatter validated, 3 code references resolved.\n"
+                    assertSameText(Run(0, out, ""), run("check", "--repo=${repo.path}"))
+                }
+            },
+            // The glob matches the one source file.
+            {
+                withText("docs/guide.md", "---\ntype: Guide\ncode_paths: [\"$glob\"]\n---\n# G\n") {
+                    val out = "okf check OK: 2 documents with frontmatter validated, 2 code references resolved.\n"
+                    assertSameText(Run(0, out, ""), run("check", "--repo=${repo.path}"))
+                }
+            },
+        )
+    }
+
+    @Test
+    fun `impact compiles a glob nested 100,000 deep`() {
+        val glob = "{".repeat(100_000) + "src/main/kotlin/app/App.kt" + "}".repeat(100_000)
+        write("docs/guide.md", "---\ntype: Guide\ncode_paths: [\"$glob\"]\n---\n# G\n")
+        commit("base")
+        val base = git("rev-parse", "HEAD")
+        write("src/main/kotlin/app/App.kt", "package app\n\nfun x() = 1\n")
+        commit("change app")
+
+        val impact = run("impact", "--repo=${repo.path}", "--base=$base")
+        val app = "src/main/kotlin/app/App.kt"
+        val err = "[NOT UPDATED] docs/adr/ADR-001-app.md <- $app\n" +
+            "[NOT UPDATED] docs/guide.md <- $app\n" +
+            "OKF IMPACT WARNING: docs/adr/ADR-001-app.md: ${notUpdated(app, "ADR-001")}\n" +
+            "OKF IMPACT WARNING: docs/guide.md: ${notUpdated(app, "guide")}\n" +
+            "OKF IMPACT: 2 finding(s); --impact-strict fails on them.\n"
+        val out = "okf impact: 1 changed files outside docs/ since merge-base ${base.take(7)} with ${base.take(7)}; " +
+            "2 documents with code_paths, 2 impacted (0 updated, 0 acknowledged, 2 NOT UPDATED).\n"
+        assertSameText(Run(0, out, err), impact)
+    }
 }

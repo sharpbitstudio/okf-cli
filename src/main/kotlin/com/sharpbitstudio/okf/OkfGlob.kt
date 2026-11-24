@@ -186,11 +186,7 @@ class OkfGlob private constructor(val pattern: String, private val alternatives:
          * The brace-free alternatives of [glob] ([BraceExpansion]), each once, in order; throws [IllegalArgumentException] on
          * a brace syntax error or when there are more than [MAX_ALTERNATIVES]. Internal for the differential tests.
          */
-        internal fun expandAlternatives(glob: String): List<String> {
-            val alternatives = BraceExpansion(glob).expand().distinct()
-            require(alternatives.size <= MAX_ALTERNATIVES) { "too many `{}` combinations (max $MAX_ALTERNATIVES)" }
-            return alternatives
-        }
+        internal fun expandAlternatives(glob: String): List<String> = BraceExpansion(glob).expand()
 
         /**
          * One brace-free alternative translated to regex chunks: the regex of the whole alternative, cut at every `**`
@@ -294,61 +290,98 @@ class OkfGlob private constructor(val pattern: String, private val alternatives:
             return if (start < glob.length && close > start) close else -1
         }
 
-        /** `{a,b}` alternatives (nested, next to wildcards) expanded into brace-free globs; braces inside `[...]` are literal. */
+        /**
+         * `{a,b}` alternatives (nested, next to wildcards) expanded into brace-free globs, each once, in order; braces
+         * inside `[...]` are literal.
+         *
+         * One pass over the glob with an explicit stack of runs (the top level, or one alternative of a `{...}` group
+         * being read), so nesting costs no recursion. Every list of combinations is kept free of repeats and stops
+         * growing once it holds more than [MAX_ALTERNATIVES] (nested groups multiply: `{a,b}` thirty times is a billion
+         * combinations). Dropping a repeat keeps the first occurrences in their order, and appending text is injective,
+         * so a list past the limit stays past it to the end: the result and the "too many" verdict are those of
+         * expanding everything and then dropping repeats. A syntax error depends on the position only and wins over
+         * "too many", as before.
+         */
         private class BraceExpansion(private val glob: String) {
-            private var pos = 0
-
-            fun expand(): List<String> {
-                val result = sequence(inBraces = false)
-                require(pos == glob.length) { "`}` without a matching `{`" }
-                return result
-            }
-
-            /** A run up to `,` / `}` (inside braces) or the end: every combination of its brace groups. */
-            private fun sequence(inBraces: Boolean): List<String> {
-                var results = listOf("")
+            /** A run up to `,` / `}` (inside braces) or the end: its combinations so far (`null`: too many), then literal text. */
+            private class Run(val group: Group?) {
+                var results: LinkedHashSet<String>? = linkedSetOf("")
                 val literal = StringBuilder()
+
                 fun flush() {
-                    if (literal.isNotEmpty()) results = results.map { it + literal }
+                    val current = results
+                    if (literal.isNotEmpty() && current != null) results = current.mapTo(LinkedHashSet()) { it + literal }
                     literal.clear()
                 }
+            }
+
+            /** A `{...}` group being read: its alternatives so far (`null`: too many) and the run it continues. */
+            private class Group(val owner: Run) {
+                var alternatives: LinkedHashSet<String>? = linkedSetOf()
+            }
+
+            /** The distinct combinations; throws [IllegalArgumentException] for a syntax error or too many combinations. */
+            fun expand(): List<String> {
+                val stack = ArrayDeque<Run>()
+                stack.addLast(Run(null))
+                var pos = 0
                 while (pos < glob.length) {
+                    val run = stack.last()
                     val c = glob[pos]
                     when {
                         c == '{' -> {
-                            flush()
+                            run.flush()
+                            stack.addLast(Run(Group(run)))
                             pos++
-                            val group = alternatives()
-                            results = results.flatMap { prefix -> group.map { prefix + it } }
-                            continue
                         }
-                        c == '}' || (c == ',' && inBraces) -> {
-                            require(inBraces) { "`}` without a matching `{`" }
-                            break
+                        c == '}' || (c == ',' && run.group != null) -> {
+                            val group = run.group
+                            require(group != null) { "`}` without a matching `{`" }
+                            run.flush()
+                            group.alternatives = union(group.alternatives, run.results)
+                            stack.removeLast()
+                            pos++
+                            if (c == ',') {
+                                stack.addLast(Run(group))
+                            } else {
+                                group.owner.results = product(group.owner.results, group.alternatives)
+                            }
                         }
                         c == '[' && classEnd(glob, pos) > 0 -> {
                             val close = classEnd(glob, pos)
-                            literal.append(glob, pos, close + 1)
+                            run.literal.append(glob, pos, close + 1)
                             pos = close + 1
-                            continue
                         }
-                        else -> literal.append(c)
+                        else -> {
+                            run.literal.append(c)
+                            pos++
+                        }
                     }
-                    pos++
                 }
-                flush()
-                return results
+                val top = stack.last()
+                require(top.group == null) { "unclosed `{` alternatives" }
+                top.flush()
+                return top.results?.toList() ?: throw IllegalArgumentException("too many `{}` combinations (max $MAX_ALTERNATIVES)")
             }
 
-            /** The alternatives of a `{...}` group, [pos] just past `{`; leaves [pos] past the closing `}`. */
-            private fun alternatives(): List<String> {
-                val all = mutableListOf<String>()
-                while (true) {
-                    all += sequence(inBraces = true)
-                    require(pos < glob.length) { "unclosed `{` alternatives" }
-                    val separator = glob[pos++]
-                    if (separator == '}') return all
+            /** [all] plus [more], `null` when either is or the union holds more than [MAX_ALTERNATIVES]. */
+            private fun union(all: LinkedHashSet<String>?, more: LinkedHashSet<String>?): LinkedHashSet<String>? {
+                if (all == null || more == null) return null
+                all.addAll(more)
+                return all.takeIf { it.size <= MAX_ALTERNATIVES }
+            }
+
+            /** Every prefix followed by every alternative, `null` when either is or there are more than [MAX_ALTERNATIVES]. */
+            private fun product(prefixes: LinkedHashSet<String>?, alternatives: LinkedHashSet<String>?): LinkedHashSet<String>? {
+                if (prefixes == null || alternatives == null) return null
+                val out = LinkedHashSet<String>()
+                for (prefix in prefixes) {
+                    for (alternative in alternatives) {
+                        out += prefix + alternative
+                        if (out.size > MAX_ALTERNATIVES) return null
+                    }
                 }
+                return out
             }
         }
     }
