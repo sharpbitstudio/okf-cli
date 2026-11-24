@@ -393,16 +393,69 @@ class OkfRefChecker(
 
         private const val MAX_BRACE_VARIANTS = 64
 
-        /** Expands `{a,b}` groups (not nested) into every combination; a token without a complete group is returned as is. */
+        /**
+         * Expands `{a,b}` groups (not nested) into every combination, the first [MAX_BRACE_VARIANTS] of them in order; a
+         * token without a complete group is returned as is. The first `{` and the first `}` after it form a group, and
+         * each alternative put in its place is expanded the same way: a depth-first walk with an explicit stack that
+         * stops at the last variant kept, so a token neither recurses per group nor builds variants it drops (`{a,b}`
+         * thirty times has a billion). A string of the walk is `head + alternative + token[at..]`: the head has no `{`
+         * and is shared by every descendant, and an alternative never holds `}` (its group ended at the first one), so
+         * its group is found by the same `indexOf` calls as on the whole string. A frame forgets each alternative once
+         * the walk has entered it, so only the current one is kept.
+         */
         fun expandBraces(token: String): List<String> {
-            val open = token.indexOf('{')
-            val close = token.indexOf('}', open + 1)
-            if (open < 0 || close < 0) return listOf(token)
-            val head = token.substring(0, open)
-            val tail = token.substring(close + 1)
-            return token.substring(open + 1, close).split(',')
-                .flatMap { expandBraces(head + it + tail) }
-                .take(MAX_BRACE_VARIANTS)
+            val variants = mutableListOf<String>()
+            val stack = ArrayDeque<BraceGroup>()
+            val head = StringBuilder()
+            var alternative = ""
+            var at = 0
+            var descend = true
+            while (true) {
+                if (descend) {
+                    val inAlternative = alternative.indexOf('{')
+                    val open = if (inAlternative >= 0) -1 else token.indexOf('{', at)
+                    val close = when {
+                        inAlternative >= 0 -> token.indexOf('}', at)
+                        open >= 0 -> token.indexOf('}', open + 1)
+                        else -> -1
+                    }
+                    if (close < 0) {
+                        variants += "$head$alternative${token.substring(at)}"
+                        if (variants.size == MAX_BRACE_VARIANTS) return variants
+                    } else {
+                        val before: String
+                        val inside: String
+                        if (inAlternative >= 0) {
+                            before = alternative.substring(0, inAlternative)
+                            inside = alternative.substring(inAlternative + 1) + token.substring(at, close)
+                        } else {
+                            before = alternative + token.substring(at, open)
+                            inside = token.substring(open + 1, close)
+                        }
+                        stack.addLast(BraceGroup(head.length, before, ArrayList<String?>(inside.split(',')), close + 1))
+                    }
+                }
+                val top = stack.lastOrNull() ?: return variants
+                if (top.next == top.alternatives.size) {
+                    stack.removeLast()
+                    descend = false
+                    continue
+                }
+                head.setLength(top.headLength)
+                head.append(top.before)
+                alternative = checkNotNull(top.alternatives[top.next])
+                top.alternatives[top.next++] = null
+                at = top.after
+                descend = true
+            }
+        }
+
+        /**
+         * One `{...}` group of [expandBraces]' walk: the head's length before it, the text between that head and the
+         * `{`, the alternatives not yet entered, and where the token continues after the `}`.
+         */
+        private class BraceGroup(val headLength: Int, val before: String, val alternatives: MutableList<String?>, val after: Int) {
+            var next = 0
         }
 
         /** Resolves `.` and `..` segments; `null` when the path climbs above the repo root. */

@@ -12,6 +12,14 @@
   rejected with a message about a reversed character range (and `okf impact` ignored), now compiles; when such a
   run of wildcards matches thousands of characters of a path (across thousands of directories, or in a name only
   git can hold), the stack overflows, as it did for a shorter run that compiled before.
+- Fix: `okf check` and `okf xcheck` expand `{a,b}` groups in a code span without work that doubled with every group
+  (30 groups took minutes) and without a `StackOverflowError` on a few thousand groups; a `code_paths` glob with
+  more than 1000 distinct alternatives is rejected at once (it took seconds from about 20 groups, and could run out
+  of memory). A glob with braces nested a few thousand levels deep no longer stops `okf check` with a
+  `StackOverflowError`, and `okf impact`, which silently ignored such a glob, now matches it. A glob whose groups
+  repeat alternatives (`{a,a}` thirty times) made `okf check` run out of memory and was silently ignored by
+  `okf impact`; it now expands to its distinct alternatives and is matched. The variants, alternatives and messages
+  are the same as before.
 
 ## 1.0.1 — 2026-11-22
 
