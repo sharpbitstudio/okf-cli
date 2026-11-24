@@ -74,9 +74,13 @@ object OkfImpact {
 
     /**
      * Separator between the ID list and the reason; a plain hyphen needs spaces around it (IDs contain hyphens).
-     * Internal for the differential tests.
+     * Internal for the differential tests. The lookbehind `(?<!\s)` rejects at once a start right after whitespace:
+     * without it, `find` tried every start inside a run of blanks, each scanning the run to its end (quadratic: 40,000
+     * blanks took seconds). Where the separator matches at a start after whitespace, it also matches one character
+     * earlier (`\s*` or `\s+` takes one more), so the leftmost match never starts after whitespace: `find` returns the
+     * same range as without the lookbehind.
      */
-    internal val REASON_SEPARATOR = Regex("""\s*[—–]\s*|\s+--?\s+""")
+    internal val REASON_SEPARATOR = Regex("""(?<!\s)(?:\s*[—–]\s*|\s+--?\s+)""")
 
     private val ADR_ID = Regex("""ADR-(\d{3})""")
 
