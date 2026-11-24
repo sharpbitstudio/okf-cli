@@ -20,6 +20,8 @@
   repeat alternatives (`{a,a}` thirty times) made `okf check` run out of memory and was silently ignored by
   `okf impact`; it now expands to its distinct alternatives and is matched. The variants, alternatives and messages
   are the same as before.
+- Fix: `okf impact` splits a `Docs-Impact:` value in linear time; a long run of blanks in it took seconds (40,000
+  characters: about 5 s).
 
 ## 1.0.1 — 2026-11-22
 

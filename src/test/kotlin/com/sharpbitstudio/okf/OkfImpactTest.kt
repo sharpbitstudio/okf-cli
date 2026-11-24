@@ -3,6 +3,10 @@ package com.sharpbitstudio.okf
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.fail
+import java.util.Random
+import java.util.regex.Matcher
+import java.util.regex.Pattern
 
 class OkfImpactTest {
     private val docs = listOf(
@@ -432,5 +436,51 @@ class OkfImpactTest {
         )
         assertSameText(listOf("[NOT UPDATED] docs/guide.md <- $deep"), lines(result))
         assertEquals(listOf("docs/guide.md"), result.findings.map { it.doc })
+    }
+
+    // Long input: Docs-Impact values.
+    @Test
+    fun `a Docs-Impact value with 200,000 blanks is split in linear time`() {
+        // No separator after the blanks: the whole value is one (unknown) ID, as for a short run of blanks.
+        val value = "ADR-001" + " ".repeat(200_000) + "x"
+        val result = withinSeconds(10) { evaluate(emptyList(), commit("eeeeeeeeee", "x\n\nDocs-Impact: $value")) }
+        val finding = "commit eeeeeee: `Docs-Impact: $value`: unknown document ID '$value' — use ADR-NNN, a docs path without .md " +
+            "(features/otp-login) or a unique file name (RUNTIME)"
+        assertSameText(listOf(ImpactFinding(null, finding)), result.findings)
+    }
+
+    @Test
+    fun `the reason separator finds what its previous pattern found`() {
+        val previous = Pattern.compile("""\s*[—–]\s*|\s+--?\s+""").matcher("")
+        val current = OkfImpact.REASON_SEPARATOR.toPattern().matcher("")
+        fun range(matcher: Matcher, value: String) = matcher.reset(value).let { if (it.find()) it.start() to it.end() else null }
+        fun compare(value: String) {
+            val expected = range(previous, value)
+            val actual = range(current, value)
+            if (actual == expected) return
+            val shown = value.map { if (it.code in 32..126) "$it" else "<U+%04X>".format(it.code) }.joinToString("")
+            fail("value '$shown': previous $expected, now $actual")
+        }
+        // Blank, tab, line feed, vertical tab, form feed, carriage return, the three dashes, a letter, a comma and a no-break
+        // space (not in `\s`).
+        val alphabet = listOf(' ', '\t', '\n', Char(0x0B), Char(0x0C), '\r', '-', '—', '–', 'a', ',', Char(0xA0))
+        for (length in 0..5) {
+            val digits = IntArray(length)
+            while (true) {
+                compare(String(CharArray(length) { alphabet[digits[it]] }))
+                var k = length - 1
+                while (k >= 0 && ++digits[k] == alphabet.size) {
+                    digits[k] = 0
+                    k--
+                }
+                if (k < 0) break
+            }
+        }
+        val pieces = listOf(
+            " ", "  ", "\t", "-", "--", "---", "—", "–", "a", "ADR-001", "features/x-y", ",", "none", " - ", " -- ",
+            Char(0xA0).toString(),
+        )
+        val r = Random(20261122L)
+        repeat(100_000) { compare(buildString { repeat(r.nextInt(16)) { append(pieces[r.nextInt(pieces.size)]) } }) }
     }
 }
